@@ -7,6 +7,7 @@ const demo = !inTelegram && params.has("demo");
 const framed = demo && !params.has("inner") && innerWidth > 600;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const EASE = "cubic-bezier(.2, .8, .2, 1)";
+const SPLASH_MIN = 450; // мс: за это время заставка успевает проявиться, и она не мелькает на быстрой сети
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -626,15 +627,27 @@ async function init() {
   }
   applyTheme();
   bind();
-  try {
-    apply(await api("GET", "/api/session"));
-  } catch (err) {
-    if (err.status === 403) $("#closed").hidden = false; // бот закрыт для всех, кроме админов
-    else {
-      render();
-      toast(err.message, 6000);
-    }
-  }
+  // данные грузятся, пока показана заставка; интерфейс выезжает не раньше, чем пройдёт SPLASH_MIN
+  const load = api("GET", "/api/session").then((data) => ({ data }), (error) => ({ error }));
+  const [res] = await Promise.all([load, new Promise((r) => setTimeout(r, reduced ? 0 : SPLASH_MIN))]);
+  const closed = res.error?.status === 403; // бот закрыт для всех, кроме админов
+  if (closed) $("#closed").hidden = false;
+  else if (res.error) render();
+  else apply(res.data);
+  exitSplash();
+  if (res.error && !closed) toast(res.error.message, 6000);
+}
+
+// заставка гаснет, логотип в шапке проявляется, а интерфейс (уже отрисованный) выезжает под ней
+function exitSplash() {
+  const splash = $("#splash");
+  document.documentElement.classList.remove("booting");
+  if (!splash) return;
+  if (reduced) return splash.remove();
+  const opts = { duration: 270, easing: EASE };
+  $(".brand img").animate([{ opacity: 0 }, { opacity: 1 }], opts);
+  splash.querySelector(".splash-logo").animate([{ transform: "none" }, { transform: "scale(.92)" }], { ...opts, fill: "forwards" });
+  splash.animate([{ opacity: 1 }, { opacity: 0 }], { ...opts, fill: "forwards" }).finished.then(() => splash.remove(), () => splash.remove());
 }
 
 if (framed) mountPhoneFrame();

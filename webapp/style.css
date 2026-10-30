@@ -273,6 +273,12 @@ main { padding: 0 16px; }
 .page-open:active { transform: scale(.985); transition-duration: .14s; }
 .page-open img, .viewer-stage img { transition: transform .35s var(--ease); }
 
+/* заставка при входе: логотип проявляется за .24 с, дальше JS плавно меняет её на интерфейс */
+.splash { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: var(--bg); }
+.splash-logo { animation: splash-in .24s var(--ease) both; }
+@keyframes splash-in { from { opacity: 0; transform: scale(.94); } }
+.booting .brand img { opacity: 0; } /* логотип в шапке проявляется, пока гаснет заставка */
+
 /* смена темы — цвета перетекают, а не щёлкают */
 .theme-anim, .theme-anim * {
   transition: background-color .35s ease, color .35s ease, border-color .35s ease, box-shadow .35s ease !important;
@@ -322,6 +328,8 @@ main { padding: 0 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .splash { display: none; }
+  .booting .brand img { opacity: 1; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
 }
 
