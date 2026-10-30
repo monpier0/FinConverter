@@ -22,7 +22,7 @@ const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 const state = {
   items: [], options: {}, title: {}, workTypes: [],
   cur: 0, curKey: null, // текущая страница: индекс среди слотов и её ключ (ключ переживает перестановки и удаления)
-  screen: "sStart", busy: false,
+  screen: "sStart", busy: false, flying: false,
 };
 
 const HINT_QUALITY = { low: "сжатое", medium: "обычное", high: "высокое" };
@@ -151,11 +151,8 @@ function setScreen(id) {
   if (state.screen === id) return;
   const prev = state.screen;
   state.screen = id;
-  if (prev === "sStart" && id === "sEdit") {
-    const start = $("#sStart");
-    start.classList.add("leaving-start"); // рамка уходит вниз и гаснет, пока выезжает редактор
-    setTimeout(() => start.classList.remove("leaving-start"), 450);
-  }
+  if (id === "sStart") resetStart();
+  if (id === "sEdit" && prev === "sStart" && state.flying) $("#sEdit").classList.add("instant", "fly-in"); // редактор встаёт сразу, а его части проявляются по очереди
   $$(".screen").forEach((s) => s.classList.toggle("on", s.id === id));
   if (id === "sEdit") requestAnimationFrame(() => { measureDeck(); layoutDeck(false); scrollFilm(false); });
 }
@@ -323,7 +320,7 @@ function syncDeck() {
     if (!node) {
       node = makeSlot(slot);
       node.style.transition = "none";
-      if (!reduced) {
+      if (!reduced && !state.flying) {
         node.classList.add("enter");
         node.style.animationDelay = `${Math.min(fresh++, 5) * 50}ms`;
         node.addEventListener("animationend", () => node.classList.remove("enter"), { once: true });
@@ -547,19 +544,94 @@ function bindDeck() {
 
 /* ---------------- действия над страницами ---------------- */
 
+/* ---------------- старт: загрузка файлов и переход в редактор ---------------- */
+
+function resetStart() {
+  $$("#sStart *").forEach((n) => n.getAnimations?.().forEach((a) => a.cancel()));
+  $$("#sStart .src").forEach((r) => { r.classList.remove("load", "wait"); const t = $(".t", r); if (t && r.dataset.t) t.textContent = r.dataset.t; });
+  $("#sStart .s3").classList.remove("breathe");
+  $("#sEdit").classList.remove("instant", "fly-in");
+  $("#deck").classList.remove("fly");
+  $$("#deck .slot").forEach((n) => { n.style.zIndex = ""; });
+  state.flying = false;
+}
+
+// файлы выбраны и грузятся: нажатая строка показывает кольцо, остальные приглушены, верхний лист стопки покачивается
+function beginLoad(row, count) {
+  $$("#sStart .src").forEach((r) => r.classList.toggle("wait", r !== row));
+  if (row) {
+    row.classList.add("load");
+    const t = $(".t", row);
+    row.dataset.t = t.textContent;
+    t.textContent = `Загружаю ${count} ${plural(count, "файл", "файла", "файлов")}…`;
+  }
+  $("#sStart .s3").classList.add("breathe");
+}
+
+// верхний лист стопки вырастает в текущую страницу, соседние выезжают из-за неё, панели проявляются снизу вверх
+function flyToEditor(data) {
+  const start = $("#sStart"), s3 = $(".s3", start), from = s3.getBoundingClientRect();
+  s3.classList.remove("breathe");
+  state.flying = true;
+  const deck = $("#deck");
+  if (!reduced) deck.classList.add("fly"); // до apply: у новых страниц обводка с самого начала прозрачная и проявляется в конце
+  apply(data, { focusNew: true });
+  if (state.screen !== "sEdit" || reduced) { resetStart(); return; }
+  measureDeck();
+  layoutDeck(false);
+  const box = deck.getBoundingClientRect();
+  const fcx = from.left + from.width / 2 - (box.left + box.width / 2), fcy = from.top + from.height / 2 - (box.top + box.height / 2); // стопка относительно середины сцены
+  const list = slots();
+  list.forEach((slot, i) => {
+    const node = deckNode(slot.key), d = Math.abs(i - state.cur);
+    if (!node || d > 2) return;
+    const end = getComputedStyle(node);
+    const to = { transform: end.transform, opacity: end.opacity };
+    node.style.zIndex = d === 0 ? 2 : 1;
+    if (d === 0) {
+      node.animate([
+        { transform: `translate(${fcx}px, ${fcy}px) scale(${from.width / node.offsetWidth})`, opacity: 0 },
+        { opacity: 1, offset: .25 }, to,
+      ], { duration: 560, easing: EASE, fill: "backwards" });
+    } else {
+      node.animate([{ transform: `translate(${fcx}px, ${fcy}px) scale(.5)`, opacity: 0 }, to],
+        { duration: 520, delay: 140 + (d - 1) * 60 + (i > state.cur ? 30 : 0), easing: EASE, fill: "backwards" });
+    }
+  });
+  $(".hd1", start).animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(-14px)" }], { duration: 220, easing: EASE, fill: "forwards" });
+  $$(".src", start).forEach((r, j) => r.animate([{ opacity: r.classList.contains("wait") ? .35 : 1, transform: "none" }, { opacity: 0, transform: "translateY(34px)" }], { duration: 240, delay: j * 40, easing: EASE, fill: "forwards" }));
+  $(".fine-a", start).animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: "forwards" });
+  s3.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: "forwards" });
+  $(".s1", start).animate([{ transform: "translateX(-52px) rotate(-9deg)", opacity: .55 }, { transform: "none", opacity: 0 }], { duration: 320, easing: EASE, fill: "forwards" });
+  $(".s2", start).animate([{ transform: "translateX(52px) rotate(9deg)", opacity: .55 }, { transform: "none", opacity: 0 }], { duration: 320, easing: EASE, fill: "forwards" });
+  [["#sEdit .bar", 160], ["#mode", 260], ["#film", 320], ["#sEdit .meta", 380], ["#sEdit .cap", 420]].forEach(([sel, delay]) =>
+    $(sel).animate([{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "none" }], { duration: 450, delay, easing: EASE, fill: "backwards" }));
+  $$("#sEdit .dock > *").forEach((b, j) => b.animate([{ opacity: 0, transform: "translateY(14px)" }, { opacity: 1, transform: "none" }], { duration: 450, delay: 400 + j * 40, easing: EASE, fill: "backwards" }));
+  $("#tools").animate([{ opacity: 0 }, { opacity: 1 }], { duration: 350, delay: 520, easing: EASE, fill: "backwards" });
+  setTimeout(() => { if (state.screen === "sEdit") resetStart(); }, 1100);
+}
+
 async function onFiles(e) {
   const files = [...e.target.files];
+  const row = e.target.closest(".src");
   e.target.value = "";
   if (!files.length) return;
   const fd = new FormData();
   files.forEach((f) => fd.append("file", f, f.name));
-  toast(`Загружаю ${files.length} ${plural(files.length, "файл", "файла", "файлов")}…`, { ms: 60000 });
+  const onStart = state.screen === "sStart";
+  if (onStart) beginLoad(row, files.length);
+  else toast(`Загружаю ${files.length} ${plural(files.length, "файл", "файла", "файлов")}…`, { ms: 60000 });
   try {
     const data = await api("POST", "/api/upload", fd);
-    hideToast();
-    apply(data, { focusNew: true }); // ошибки по отдельным файлам показываются уже после того, как погасло «Загружаю…»
+    if (onStart && data.items.length && state.screen === "sStart") flyToEditor(data);
+    else {
+      if (!onStart) hideToast();
+      apply(data, { focusNew: true }); // ошибки по отдельным файлам показываются уже после того, как погасло «Загружаю…»
+      if (onStart) resetStart(); // ни один файл не открылся: остаёмся на старте
+    }
     if (state.items.length) haptic("success");
   } catch (err) {
+    if (onStart) resetStart();
     haptic("error");
     toast(err.message, { ms: 5000 });
   }
@@ -573,9 +645,9 @@ async function rotate() {
   spin[item.id] = (spin[item.id] ?? item.rotation) + 90;
   item.rotation = (item.rotation + 90) % 360;
   // рамки слов посчитаны для прежнего поворота
-  if (item.text != null && item.boxes?.length) {
-    item.boxes = [];
-    api("PUT", `/api/items/${item.id}/text`, { text: item.text, boxes: [] }).catch(() => {});
+  if (item.text != null && item.marks?.some((m) => m.box)) {
+    item.marks = item.marks.map((m) => ({ ...m, box: null }));
+    api("PUT", `/api/items/${item.id}/text`, { text: item.text, marks: item.marks }).catch(() => {});
   }
   // крутим уже нарисованную страницу: переход в CSS делает это плавно
   fillSlot(deckNode(slot.key), slot);
@@ -750,7 +822,7 @@ async function again() {
 /* ---------------- распознавание текста ---------------- */
 
 const ocr = { active: false, finished: false, seen: new Set() };
-const rv = { i: 0, boxes: [], token: 0 };
+const rv = { i: 0, marks: [], token: 0, orig: false, note: null }; // marks: пометки показанной страницы, на них ссылаются data-k слов в тексте
 
 async function onOcrButton() {
   if (!imageItems().length) { toast("Распознавать нечего: добавь фото"); return; }
@@ -785,6 +857,8 @@ function showOcrSheet(job) {
   steps.hidden = job.total > 10; // для большого числа страниц хватает полоски
   $("#oBar").style.width = "0";
   $("#oLabel").textContent = "";
+  $("#oStages").hidden = $("#oFine").hidden = !job.check; // проверки нет без ключа API: тогда только распознавание
+  setStages(null);
   $("#ocr").classList.add("busy");
   $("#ocr .ringo circle").style.strokeDashoffset = "160";
   openLayer("shOcr", {
@@ -808,8 +882,14 @@ function setOcrLabel(text) {
 
 const CHECK = '<svg class="i" style="width:16px;height:16px" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg>';
 
+function setStages(stage) { // ocr: читаются страницы, check: идёт проверка последних, done: всё готово
+  $$("#oStages span").forEach((span, i) => { span.className = !stage ? "" : stage === "done" ? "ok" : i === 0 ? (stage === "check" ? "ok" : "on") : (stage === "check" ? "on" : ""); });
+}
+
 function paintOcr(j) {
-  setOcrLabel(j.state === "queued" ? `Ты в очереди: ${j.position}-й` : `Страница ${Math.min(j.done + 1, j.total)} из ${j.total}`);
+  const what = j.check ? ` · ${j.stage === "check" ? "проверяю текст" : "распознаю"}` : "";
+  setOcrLabel(j.state === "queued" ? `Ты в очереди: ${j.position}-й` : `Страница ${Math.min(j.done + 1, j.total)} из ${j.total}${what}`);
+  setStages(j.state === "queued" ? null : j.state === "done" ? "done" : j.stage);
   const share = j.total ? (j.done + (j.state === "running" ? .5 : 0)) / j.total : 0;
   $("#oBar").style.width = `${share * 100}%`;
   $("#shOcr .pbar").setAttribute("aria-valuenow", String(Math.round(share * 100)));
@@ -857,31 +937,47 @@ async function resumeOcr() {
 
 /* проверка и правка текста */
 
+const TAGS = { ocr: "Ошибка распознавания", punct: "Пунктуация", spell: "Правописание", ask: "Проверь по смыслу" };
+const countMarks = (paragraphs) => paragraphs.reduce((n, p) => n + p.split(MARK_OPEN).length - 1, 0);
+const blankMark = () => ({ kind: "un", old: "", new: "", why: "", on: true, box: null });
+
+// слово в тексте: исправленное или исходное, смотря на состояние пометки; в режиме «Оригинал» всегда исходное
+function markWord(meta, on, current) {
+  if (meta.kind === "un" || !meta.old) return current;
+  return rv.orig || !on ? meta.old : (meta.new || meta.old);
+}
+
 function fillText(box, paragraphs) {
   box.replaceChildren();
   let k = 0;
   for (const para of paragraphs.length ? paragraphs : [""]) {
     const p = el("p");
     para.split(new RegExp(`[${MARK_OPEN}${MARK_CLOSE}]`)).forEach((part, n) => { // нечётные куски — помеченные слова
-      if (!part) return;
-      if (n % 2) { const m = el("mark"); m.textContent = part; m.dataset.k = String(k++); p.append(m); }
-      else p.append(part);
+      if (n % 2) {
+        const idx = k++, meta = rv.marks[idx] || blankMark(), word = markWord(meta, meta.on, part);
+        if (!word) return;
+        const m = el("mark");
+        m.dataset.k = String(idx);
+        m.dataset.kind = meta.kind;
+        if (meta.kind !== "un") m.dataset.s = meta.on ? "on" : "off";
+        m.textContent = word;
+        p.append(m);
+      } else if (part) p.append(part);
     });
     if (!p.childNodes.length) p.append(el("br"));
     box.append(p);
   }
-  return k;
 }
 
-// текст страницы обратно в абзацы с пометками и рамки оставшихся помеченных слов
+// текст страницы обратно в абзацы с пометками и список оставшихся пометок (с их текущим состоянием)
 function readText(box) {
-  const boxes = [];
+  const marks = [];
   const walk = (node) => [...node.childNodes].map((n) => {
     if (n.nodeType === 3) return n.data;
     if (n.nodeName === "BR") return "";
     if (n.nodeName === "MARK") {
-      const b = rv.boxes[Number(n.dataset.k)];
-      if (b) boxes.push(b);
+      const meta = rv.marks[Number(n.dataset.k)] || blankMark();
+      marks.push({ ...meta, on: n.dataset.s ? n.dataset.s === "on" : meta.on });
       return MARK_OPEN + n.textContent + MARK_CLOSE;
     }
     return walk(n);
@@ -894,7 +990,7 @@ function readText(box) {
     else inline += walk({ childNodes: [n] });
   }
   flush();
-  return { text: out.map((t) => t.replaceAll(" ", " ")).filter((t) => t.trim()), boxes };
+  return { text: out.map((t) => t.replaceAll(" ", " ")).filter((t) => t.trim()), marks };
 }
 
 function openReview(start = 0) {
@@ -902,7 +998,7 @@ function openReview(start = 0) {
   rv.i = clamp(start, 0, textItems().length - 1);
   renderReview(0);
   setScreen("sReview");
-  openScreenLayer("sReview", () => { flushText(); setScreen(state.items.length ? "sEdit" : "sStart"); sync(); });
+  openScreenLayer("sReview", () => { closeNote(); flushText(); setScreen(state.items.length ? "sEdit" : "sStart"); sync(); });
 }
 
 const currentTextItem = () => textItems()[rv.i];
@@ -937,14 +1033,19 @@ function rotatedSrc(src, deg) {
 function renderReview(dir) {
   const items = textItems(), item = items[rv.i];
   if (!item) return;
+  closeNote();
   const box = $("#rvText");
   $("#rvCount").textContent = `Страница ${rv.i + 1} из ${items.length}`;
   const token = ++rv.token, img = $("#rvImg"), src = item.mid || item.thumb;
   $("#rvZoom").style.transform = "";
   rotatedSrc(src, item.rotation).then((url) => { if (token === rv.token && img.getAttribute("src") !== url) img.src = url; });
-  const marks = fillText(box, item.text);
-  rv.boxes = item.boxes && item.boxes.length === marks ? [...item.boxes] : []; // рамки нужны, только пока они совпадают с подсвеченными словами
+  const count = countMarks(item.text);
+  rv.marks = Array.isArray(item.marks) && item.marks.length === count ? item.marks.map((m) => ({ ...m })) : Array.from({ length: count }, blankMark);
+  rv.orig = false;
+  fillText(box, item.text);
   buildBoxes();
+  setVersion();
+  updateSum();
   updateLegend();
   $("#rvDots").replaceChildren(...Array.from({ length: Math.min(items.length, 5) }, (_, j) => Object.assign(el("i"), { className: j === Math.min(rv.i, 4) ? "on" : "" })));
   $("#rvPrev").disabled = rv.i === 0;
@@ -954,58 +1055,150 @@ function renderReview(dir) {
 }
 
 function buildBoxes() {
-  $("#rvBoxes").replaceChildren(...rv.boxes.map(([x, y, w, h]) => {
+  $("#rvBoxes").replaceChildren(...rv.marks.map((m) => {
     const b = el("span", "wbox");
+    if (!m.box) { b.hidden = true; return b; }
+    const [x, y, w, h] = m.box;
     Object.assign(b.style, { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` });
     return b;
   }));
 }
 
-// рамка слова, которое уже поправили, не нужна
+// рамка слова, которое поправили руками, не нужна
 function syncBoxes() {
   const alive = new Set($$("#rvText mark").map((m) => m.dataset.k));
-  $$("#rvBoxes .wbox").forEach((b, k) => { b.hidden = !alive.has(String(k)); });
+  $$("#rvBoxes .wbox").forEach((b, k) => { b.hidden = !alive.has(String(k)) || !rv.marks[k]?.box; });
+}
+
+// «Исправлено» или «Оригинал»: показ того же текста как исправлен или как распознан, сами правки не меняются
+function setVersion() {
+  const item = currentTextItem(), box = $("#rvText");
+  const has = Boolean(item?.checked) && rv.marks.some((m) => m.kind !== "un");
+  $("#rvVer").hidden = !has;
+  if (!has) rv.orig = false;
+  $$("#rvVer button").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.v === "orig") === rv.orig)));
+  box.classList.toggle("orig", rv.orig);
+  box.contentEditable = String(!rv.orig);
+}
+
+function applyVersion() {
+  closeNote();
+  $$("#rvText mark").forEach((m) => { const meta = rv.marks[Number(m.dataset.k)]; if (meta) m.textContent = markWord(meta, m.dataset.s === "on", m.textContent); });
+  setVersion();
+}
+
+function updateSum() {
+  const item = currentTextItem(), box = $("#rvText"), sum = $("#rvSum");
+  if (!item) return;
+  if (!item.checked) { sum.textContent = readText(box).text.length ? "Проверка недоступна" : ""; return; }
+  const on = $$("mark[data-s='on']", box).length, ask = $$("mark[data-kind='ask'][data-s='off']", box).length;
+  let text = on ? `${on} ${plural(on, "правка", "правки", "правок")}` : "Правок нет";
+  if (ask) text += `, ${ask} ${plural(ask, "вопрос", "вопроса", "вопросов")}`;
+  sum.textContent = text;
 }
 
 function updateLegend() {
-  const legend = $("#rvLegend"), box = $("#rvText");
+  const item = currentTextItem(), legend = $("#rvLegend"), box = $("#rvText");
   const empty = !readText(box).text.length;
-  legend.hidden = !empty && !box.querySelector("mark");
-  if (empty) legend.textContent = "Текст на фото не нашёлся. Можно ввести его вручную или перейти к следующей странице.";
-  else legend.replaceChildren(Object.assign(el("mark"), { textContent: "Подсвеченные" }), " слова распознаны неуверенно: нажми на слово, и фото приблизится к нему");
+  legend.hidden = !empty && !(item && !item.checked && box.querySelector("mark"));
+  legend.textContent = empty ? "Текст на фото не нашёлся. Можно ввести его вручную или перейти к следующей странице."
+    : "Текст не проверен: подсвечены слова, в которых распознавание не уверено. Нажми на слово, и фото приблизится к нему.";
 }
 
-// нажатие на подсвеченное слово: фото плавно подъезжает к нему, рамка подпрыгивает
-function focusMark(mark) {
-  const k = Number(mark.dataset.k), on = !mark.classList.contains("act");
+// карточка правки: что было, что стало и почему; «Вернуть» меняет слово на месте
+function openNote(mark) {
+  const meta = rv.marks[Number(mark.dataset.k)];
+  if (!meta || meta.kind === "un") return;
+  rv.note = mark;
+  const ask = meta.kind === "ask", on = mark.dataset.s === "on", sure = el("span", "ar");
+  sure.textContent = "→";
+  $("#nTag").textContent = TAGS[meta.kind];
+  const line = $("#nLine");
+  if (ask) {
+    const was = el("span"), now = el("b");
+    was.textContent = `«${meta.old}»`;
+    now.textContent = `«${meta.new}»?`;
+    line.replaceChildren(...(meta.new ? [was, " ", sure, " ", now] : [was]));
+  } else {
+    const was = el("s"), now = el("b");
+    was.textContent = meta.old;
+    now.textContent = meta.new;
+    line.replaceChildren(was, " ", sure, " ", now);
+  }
+  $("#nWhy").textContent = meta.why;
+  $("#nSoft").textContent = ask ? (on ? "Вернуть" : "Оставить") : (on ? "Вернуть как было" : "Исправить снова");
+  $("#nMain").textContent = ask && !on && meta.new ? "Заменить" : "Понятно";
+  $(".nb", $("#note")).classList.toggle("one", ask && !meta.new); // предложить нечего: одна кнопка
+  $("#rvSheet").classList.add("noting");
+}
+
+function closeNote() {
+  rv.note = null;
+  $("#rvSheet").classList.remove("noting");
   $$("#rvText mark").forEach((m) => m.classList.remove("act"));
   $$("#rvBoxes .wbox").forEach((b) => b.classList.remove("act"));
-  const zoom = $("#rvZoom");
-  const b = rv.boxes[k], node = $("#rvBoxes").children[k];
-  if (!on || !b || !node) { zoom.style.transform = ""; return; }
+  $("#rvZoom").style.transform = "";
+}
+
+function setMarkState(mark, on) {
+  const meta = rv.marks[Number(mark.dataset.k)];
+  mark.dataset.s = on ? "on" : "off";
+  if (meta) mark.textContent = markWord(meta, on, mark.textContent);
+  commitText();
+}
+
+function noteMain() {
+  const mark = rv.note, meta = mark && rv.marks[Number(mark.dataset.k)];
+  if (meta?.kind === "ask" && mark.dataset.s !== "on" && meta.new) setMarkState(mark, true);
+  closeNote();
+}
+
+function noteSoft() {
+  const mark = rv.note, meta = mark && rv.marks[Number(mark.dataset.k)];
+  if (!meta) return;
+  if (meta.kind !== "ask") setMarkState(mark, mark.dataset.s !== "on");
+  else if (mark.dataset.s === "on") setMarkState(mark, false);
+  closeNote();
+}
+
+// нажатие на слово: фото плавно подъезжает к нему, рамка подпрыгивает, снизу карточка правки
+function focusMark(mark) {
+  const k = Number(mark.dataset.k), on = !mark.classList.contains("act"), box = rv.marks[k]?.box;
+  closeNote();
+  if (!on) return;
   mark.classList.add("act");
-  void node.offsetWidth;
-  node.classList.add("act");
-  const pg = $("#rvPg"), W = pg.clientWidth, Hc = pg.clientHeight, Hi = zoom.offsetHeight;
-  const s = clamp(.5 / Math.max(b[2], .01), 1.3, 2.2);
-  const cx = (b[0] + b[2] / 2) * W, cy = (b[1] + b[3] / 2) * Hi;
-  const tx = clamp(W / 2 - cx * s, W - W * s, 0);
-  const ty = Hi * s <= Hc ? (Hc - Hi * s) / 2 : clamp(Hc / 2 - cy * s, Hc - Hi * s, 0);
-  zoom.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+  const node = $("#rvBoxes").children[k];
+  if (box && node) {
+    void node.offsetWidth;
+    node.classList.add("act");
+    const zoom = $("#rvZoom"), pg = $("#rvPg"), W = pg.clientWidth, Hc = pg.clientHeight, Hi = zoom.offsetHeight;
+    const s = clamp(.5 / Math.max(box[2], .01), 1.3, 2.2);
+    const cx = (box[0] + box[2] / 2) * W, cy = (box[1] + box[3] / 2) * Hi;
+    const tx = clamp(W / 2 - cx * s, W - W * s, 0);
+    const ty = Hi * s <= Hc ? (Hc - Hi * s) / 2 : clamp(Hc / 2 - cy * s, Hc - Hi * s, 0);
+    zoom.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+  }
+  openNote(mark);
+}
+
+// изменили текст или состояние правки: запоминаем и отправляем на сервер чуть позже
+function commitText() {
+  const item = currentTextItem();
+  if (!item) return;
+  const { text, marks } = readText($("#rvText"));
+  item.text = text;
+  item.marks = marks;
+  syncBoxes();
+  updateSum();
+  updateLegend();
+  debounced("text", flushText, 600);
 }
 
 function onTextInput() {
-  const item = currentTextItem();
-  if (!item) return;
   const anchor = getSelection().anchorNode;
   const mark = (anchor?.nodeType === 3 ? anchor.parentElement : anchor)?.closest?.("mark");
-  if (mark && $("#rvText").contains(mark)) { mark.replaceWith(...mark.childNodes); $("#rvZoom").style.transform = ""; } // слово поправили, пометка не нужна
-  const { text, boxes } = readText($("#rvText"));
-  item.text = text;
-  item.boxes = boxes;
-  syncBoxes();
-  updateLegend();
-  debounced("text", flushText, 600);
+  if (mark && $("#rvText").contains(mark)) { mark.replaceWith(...mark.childNodes); closeNote(); } // слово поправили руками, пометка не нужна
+  commitText();
 }
 
 // отправляет текст текущей страницы на сервер сразу
@@ -1013,7 +1206,7 @@ function flushText() {
   clearTimeout(timers.text);
   const item = currentTextItem();
   if (!item || state.screen !== "sReview") return Promise.resolve();
-  return api("PUT", `/api/items/${item.id}/text`, { text: item.text, boxes: item.boxes || [] }).catch((err) => toast(err.message));
+  return api("PUT", `/api/items/${item.id}/text`, { text: item.text, marks: item.marks ?? null }).catch((err) => toast(err.message));
 }
 
 async function copyText(text) {
@@ -1157,7 +1350,10 @@ function bind() {
   $("#rvPrev").onclick = () => { if (rv.i > 0) { flushText(); rv.i--; renderReview(-1); } };
   $("#rvNext").onclick = () => { if (rv.i < textItems().length - 1) { flushText(); rv.i++; renderReview(1); } };
   $("#rvText").addEventListener("input", onTextInput);
-  $("#rvText").addEventListener("click", (e) => { const m = e.target.closest("mark"); if (m) focusMark(m); });
+  $("#rvText").addEventListener("click", (e) => { const m = e.target.closest("mark"); if (m && !rv.orig) focusMark(m); });
+  $("#rvVer").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { rv.orig = b.dataset.v === "orig"; applyVersion(); } });
+  $("#nMain").onclick = noteMain;
+  $("#nSoft").onclick = noteSoft;
   $("#rvText").addEventListener("paste", (e) => { // вставляем только текст, без чужой вёрстки
     e.preventDefault();
     document.execCommand("insertText", false, (e.clipboardData || window.clipboardData).getData("text/plain"));
@@ -1202,7 +1398,7 @@ function demoThumb(i) {
 }
 
 const demoDb = {
-  items: Array.from({ length: 6 }, (_, i) => ({ id: "d" + i, kind: "image", rotation: 0, pages: 1, name: "", thumb: demoThumb(i), mid: demoThumb(i), text: null, boxes: null }))
+  items: Array.from({ length: 6 }, (_, i) => ({ id: "d" + i, kind: "image", rotation: 0, pages: 1, name: "", thumb: demoThumb(i), mid: demoThumb(i), text: null, marks: null, checked: false }))
     .concat([{ id: "dp", kind: "pdf", rotation: 0, pages: 4, name: "Методичка по финансовому менеджменту.pdf" }]),
   options: { page: "a4", mode: "scan", quality: "medium", filename: "" },
   title: {
@@ -1214,16 +1410,23 @@ const demoDb = {
   work_types: ["Реферат", "Доклад", "Эссе", "Контрольная работа", "Домашнее задание", "Курсовая работа", "Лабораторная работа", "Отчёт по практике"],
 };
 
-const M = (w) => MARK_OPEN + w + MARK_CLOSE;
+const mk = (kind, old, now, why) => ({ kind, old, new: now, why, on: kind !== "ask", box: null });
+const wrap = (w) => MARK_OPEN + w + MARK_CLOSE;
+// страницы с проверкой: текст, пометки и рамки слов (в долях страницы)
 const DEMO_TEXT = [
-  [`Валовой внутренний продукт (ВВП) измеряет рыночную стоимость всех ${M("конечных")} товаров и услуг, произведённых в стране за год.`,
-   `Центральный банк управляет ${M("ключевой")} ставкой: её повышение сдерживает инфляцию, но замедляет рост экономики.`],
-  ["Различают номинальный и реальный ВВП. Реальный ВВП пересчитан в неизменных ценах, поэтому показывает рост " + M("выпуска") + ", а не цен.",
-   "Дефлятор ВВП отражает изменение общего уровня цен в экономике."],
-  ["Безработица бывает фрикционной, структурной и циклической. Естественный уровень безработицы включает первые две формы.",
-   `Закон Оукена связывает отставание ВВП от потенциального уровня с ${M("циклической")} безработицей.`],
+  { text: [`Валовой внутренний продукт (ВВП) измеряет рыночную стоимость всех ${wrap("конечных")} товаров и услуг, произведённых в стране за год.`,
+           `Центральный банк управляет ключевой ${wrap("ставкой:")} её повышение сдерживает инфляцию.`],
+    marks: [mk("ocr", "конечньх", "конечных", "На фото здесь «конечных»: сочетание «ых» распознано как «ньх»."), mk("punct", "ставкой", "ставкой:", "Перед пояснением нужно двоеточие.")],
+    boxes: [[.17, .27, .22, .04], [.46, .49, .27, .04]] },
+  { text: ["Различают номинальный и реальный ВВП. Реальный ВВП пересчитан в неизменных ценах, поэтому показывает рост " + wrap("цен") + ", а не цен.",
+           "Дефлятор ВВП отражает изменение общего " + wrap("уровня") + " цен в экономике."],
+    marks: [{ ...mk("ask", "цен", "выпуска", "Получается «рост цен, а не цен». Похоже на оговорку: реальный ВВП показывает рост выпуска."), on: false }, mk("ocr", "уровнн", "уровня", "На фото «уровня»: «я» распознана как «н».")],
+    boxes: [[.55, .27, .2, .04], [.3, .49, .3, .04]] },
+  { text: ["Безработица бывает фрикционной, структурной и циклической. Она растёт " + wrap("вследствие") + " спада производства.",
+           `Закон Оукена связывает отставание ВВП от потенциального уровня с ${wrap("циклической")} безработицей.`],
+    marks: [mk("spell", "в следствие", "вследствие", "Предлог пишется слитно: «вследствие спада»."), mk("ocr", "циклическои", "циклической", "На фото «циклической»: «й» распознана как «и».")],
+    boxes: [[.3, .27, .3, .04], [.3, .49, .3, .04]] },
 ];
-const DEMO_BOXES = [[[.17, .27, .22, .04], [.46, .49, .27, .04]], [[.55, .27, .2, .04]], [[.3, .49, .3, .04]]];
 let demoJob = null;
 
 // «сервер» распознавания: сначала очередь, потом по странице за 650 мс
@@ -1231,11 +1434,15 @@ function demoJobView() {
   const j = demoJob, t = Date.now() - j.start;
   const done = j.frozen ?? Math.max(0, Math.min(j.total, Math.floor((t - 1200) / 650)));
   j.todo.slice(0, done).forEach((id, n) => {
-    const item = demoDb.items.find((i) => i.id === id);
-    if (item && item.text == null) { item.text = DEMO_TEXT[n % 3]; item.boxes = DEMO_BOXES[n % 3]; }
+    const item = demoDb.items.find((i) => i.id === id), d = DEMO_TEXT[n % 3];
+    if (item && item.text == null) {
+      item.text = d.text;
+      item.marks = d.marks.map((m, k) => ({ ...m, box: d.boxes[k] }));
+      item.checked = true;
+    }
   });
   const st = j.cancel ? "cancelled" : done >= j.total ? "done" : t < 1200 ? "queued" : "running";
-  return { state: st, total: j.total, done, position: st === "queued" ? 2 : 0, finished: j.todo.slice(0, done), error: "" };
+  return { state: st, total: j.total, done, position: st === "queued" ? 2 : 0, finished: j.todo.slice(0, done), error: "", check: true, stage: done >= j.total - 1 ? "check" : "ocr" };
 }
 
 async function demoApi(method, path, body) {
@@ -1255,7 +1462,7 @@ async function demoApi(method, path, body) {
   if (path.endsWith("/text") && method === "PUT") {
     const item = db.items.find((i) => i.id === id);
     item.text = body.text;
-    item.boxes = body.boxes;
+    item.marks = body.marks;
     return { ok: true };
   }
   if (path === "/api/export") {
@@ -1274,10 +1481,11 @@ async function demoApi(method, path, body) {
     return { ok: true, pages, size: 3_420_000 };
   }
   if (path === "/api/upload") {
+    await sleep(700);
     for (const f of body.getAll("file")) {
       const pdf = f.name.toLowerCase().endsWith(".pdf");
       const url = pdf ? null : URL.createObjectURL(f);
-      db.items.push({ id: "u" + Math.random().toString(16).slice(2), kind: pdf ? "pdf" : "image", rotation: 0, pages: 1, name: f.name, thumb: url, mid: url, text: null, boxes: null });
+      db.items.push({ id: "u" + Math.random().toString(16).slice(2), kind: pdf ? "pdf" : "image", rotation: 0, pages: 1, name: f.name, thumb: url, mid: url, text: null, marks: null, checked: false });
     }
   }
   if (path === "/api/order") db.items = body.ids.map((x) => db.items.find((i) => i.id === x));

@@ -32,6 +32,7 @@
     <symbol id="i-aa" viewBox="0 0 24 24"><path d="M3 18l5-12 5 12M5 14h6M15 18v-6m0 1.5c0-1.4 1.1-2.3 2.6-2.3S20 12.6 20 14v4"/></symbol>
     <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
     <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-cam" viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H8l1.2-1.8A1 1 0 0 1 10 3.8h4a1 1 0 0 1 .8.4L16 6h1.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
   </svg>
 
@@ -40,17 +41,17 @@
 
   <div id="app">
 
-    <!-- старт: рамка как в видоискателе -->
+    <!-- старт: три понятных действия -->
     <section class="screen on" id="sStart" aria-label="Добавление страниц">
       <header class="bar"><span class="brand"><img src="/static/logo.svg" alt="" width="26" height="26"><span>FinConverter</span></span></header>
-      <div class="finder" id="finder"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i><b>Положите лист в кадр</b><span>Фото, скан или PDF</span></div>
-      <p class="hintline">Можно отправить сразу несколько файлов</p>
-      <div class="dock">
-        <label class="side press" aria-label="Из галереи"><input type="file" accept="image/*,.heic,.heif" multiple class="file-input"><svg class="i"><use href="#i-img"/></svg></label>
-        <label class="shutter press" aria-label="Снять"><input type="file" accept="image/*" capture="environment" class="file-input"><svg class="ring"><circle class="tr" cx="38" cy="38" r="35"/></svg><span class="core">Снять</span></label>
-        <label class="side press" aria-label="PDF-файл"><input type="file" accept="application/pdf,.pdf" multiple class="file-input"><svg class="i"><use href="#i-file"/></svg></label>
+      <div class="hd1"><h1>Соберите PDF из фото конспектов</h1><p>Выберите, откуда взять страницы. Порядок и режим поправите потом.</p></div>
+      <div class="stack" aria-hidden="true"><i class="s1"></i><i class="s2"></i><i class="s3"><u>PDF</u></i></div>
+      <div class="srcs">
+        <label class="src main press"><input type="file" accept="image/*" capture="environment" class="file-input"><span class="ic"><svg class="i"><use href="#i-cam"/></svg></span><span class="tx"><b>Снять на камеру</b><span class="t">Откроется камера</span></span><svg class="i go"><use href="#i-right"/></svg></label>
+        <label class="src press"><input type="file" accept="image/*,.heic,.heif" multiple class="file-input"><span class="ic"><svg class="i"><use href="#i-img"/></svg></span><span class="tx"><b>Из галереи</b><span class="t">Сразу несколько фото</span></span><svg class="i go"><use href="#i-right"/></svg></label>
+        <label class="src press"><input type="file" accept="application/pdf,.pdf" multiple class="file-input"><span class="ic"><svg class="i"><use href="#i-file"/></svg></span><span class="tx"><b>PDF-файл</b><span class="t">Страницы войдут в документ</span></span><svg class="i go"><use href="#i-right"/></svg></label>
       </div>
-      <p class="cap">Поддерживаются JPG, PNG, HEIC и PDF</p>
+      <p class="fine-a">Фото из чата с ботом тоже попадут сюда</p>
     </section>
 
     <!-- редактор: страница крупно, плёнка, режим под ней -->
@@ -83,8 +84,10 @@
       <header class="rv-top"><button type="button" class="round press" id="rvClose" aria-label="Закрыть"><svg class="i"><use href="#i-x"/></svg></button><span class="pill" id="rvCount"></span><span class="round ghost-round" aria-hidden="true"></span></header>
       <div class="rv-sheet" id="rvSheet">
         <div class="hd"></div>
+        <div class="rv-bar"><span class="rv-sum" id="rvSum"></span><span class="mini-seg" id="rvVer"><button type="button" data-v="fixed" aria-pressed="true">Исправлено</button><button type="button" data-v="orig" aria-pressed="false">Оригинал</button></span></div>
         <div class="rv-text" id="rvText" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Распознанный текст" spellcheck="false"></div>
         <p class="legend" id="rvLegend" hidden></p>
+        <div class="note" id="note" aria-live="polite"><span class="tg" id="nTag"></span><div class="ln" id="nLine"></div><p id="nWhy"></p><div class="nb"><button type="button" class="soft press" id="nSoft"></button><button type="button" class="main press" id="nMain"></button></div></div>
         <div class="rv-foot">
           <div class="pg-nav"><button type="button" id="rvPrev" aria-label="Предыдущая страница"><svg class="i"><use href="#i-left"/></svg></button><span class="dots" id="rvDots" aria-hidden="true"></span><button type="button" id="rvNext" aria-label="Следующая страница"><svg class="i"><use href="#i-right"/></svg></button></div>
           <div class="acts"><button type="button" class="main press" data-fmt="docx">Word</button><button type="button" class="press" data-fmt="pdf">PDF</button><button type="button" class="press" data-fmt="text">Копия</button></div>
@@ -145,8 +148,10 @@
     <div class="sheet" id="shOcr" role="dialog" aria-modal="true" aria-label="Распознавание текста" hidden>
       <div class="handle"></div><h2>Распознаю текст</h2>
       <p class="sub" id="oLabel" aria-live="polite"></p>
+      <div class="stg" id="oStages" hidden><span>Распознаю</span><span>Проверяю текст</span></div>
       <div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><i id="oBar"></i></div>
       <div class="ocr-steps" id="oSteps"></div>
+      <p class="fine" id="oFine" hidden>Для проверки текст страницы отправляется во внешний сервис ИИ. Сами фото остаются у нас.</p>
       <button type="button" class="ghost press" id="oCancel">Отменить</button>
     </div>
 
