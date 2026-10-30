@@ -17,6 +17,7 @@ class Config:
     data_dir: Path
     max_items: int
     dev_user_id: int | None  # для отладки мини-аппа в обычном браузере без Telegram
+    proxy: str = ""  # прокси до api.telegram.org, если Telegram недоступен напрямую
 
 
 def load_config() -> Config:
@@ -32,4 +33,5 @@ def load_config() -> Config:
         data_dir=Path(os.getenv("DATA_DIR", ROOT / "data")),
         max_items=int(os.getenv("MAX_ITEMS", "100")),
         dev_user_id=int(dev_user) if dev_user else None,
+        proxy=os.getenv("PROXY_URL", "").strip(),
     )

@@ -1,4 +1,5 @@
 aiogram>=3.13,<4
+aiohttp-socks>=0.9
 Pillow>=10.4
 pillow-heif>=0.18
 pypdf>=4.3
