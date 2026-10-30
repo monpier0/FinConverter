@@ -4,10 +4,6 @@
 from io import BytesIO
 from xml.sax.saxutils import escape
 
-from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml.ns import qn
-from docx.shared import Cm, Pt
 from reportlab.lib.enums import TA_JUSTIFY
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
@@ -35,6 +31,12 @@ def merge_pages(pages: list[list[str]]) -> list[str]:
 
 
 def build_docx(paragraphs: list[str]) -> bytes:
+    # библиотека подключается здесь, а не наверху: если её нет, не работает только Word, а бот остаётся живым
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt
+
     doc = Document()
     section = doc.sections[0]
     section.page_width, section.page_height = Cm(21), Cm(29.7)
