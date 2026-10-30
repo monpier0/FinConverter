@@ -68,6 +68,7 @@ function render() {
   $("#buildBtn").classList.toggle("loading", state.busy);
   renderGrid();
   renderForm();
+  renderOcr();
 }
 
 const seen = new Set(); // страницы, которые уже показывали, — им не нужна анимация появления
@@ -82,6 +83,7 @@ function renderGrid() {
     const pages = slot.item?.pages ?? 1;
     const page = el("div", "page");
     page.dataset.key = slot.kind === "title" ? "title" : slot.item.id;
+    if (slot.kind === "image" && (slot.item.text != null || slot.item._got)) page.classList.add("got");
     const open = el("button", "page-open");
     open.type = "button";
     open.onclick = () => openViewer(idx);
@@ -321,6 +323,9 @@ function showDone(res) {
   $("#editor").hidden = true;
   $("#moreBtn").hidden = true;
   $("#done").hidden = false;
+  $("#doneTitle").replaceChildren("Готово.", el("br"), "PDF уже в чате");
+  $("#doneLead").textContent = "Новые фото пойдут в следующий файл.";
+  $("#doneIcon").textContent = "PDF";
   $("#doneName").textContent = state.options.filename ? `${state.options.filename}.pdf` : "PDF-файл";
   $("#doneMeta").textContent = `${res.pages} ${plural(res.pages, "страница", "страницы", "страниц")} · ${humanSize(res.size)}`;
   state.items = [];
@@ -404,6 +409,258 @@ async function viewerDelete() {
   state.items.length ? renderViewer() : popLayer();
 }
 
+/* ---------------- распознавание текста ---------------- */
+
+const MARK_OPEN = "", MARK_CLOSE = ""; // границы слов, в которых распознавание сомневается
+const ocr = { active: false, finished: false, seen: new Set() };
+const rv = { i: 0 };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const imageItems = () => state.items.filter((i) => i.kind === "image");
+const textItems = () => imageItems().filter((i) => i.text != null);
+const plainText = (t) => t.replaceAll(MARK_OPEN, "").replaceAll(MARK_CLOSE, "");
+
+function renderOcr() {
+  const imgs = imageItems(), got = textItems().length, all = got === imgs.length;
+  $("#ocrCard").hidden = !imgs.length;
+  $("#ocrTitle").textContent = !got ? "Распознать текст"
+    : all ? `Текст готов: ${got} ${plural(got, "страница", "страницы", "страниц")}` : `Распознано ${got} из ${imgs.length}`;
+  $("#ocrSub").textContent = !got ? "Печатный текст станет страницами, их можно проверить и поправить"
+    : all ? "Проверь, поправь и получи документ" : "Остальные страницы можно распознать сейчас";
+  $("#ocrBtn").textContent = all ? "Проверить" : "Распознать";
+}
+
+async function startOcr() {
+  if (ocr.active) return;
+  haptic("light");
+  let job;
+  try {
+    job = await api("POST", "/api/ocr");
+  } catch (err) {
+    haptic("error");
+    toast(err.message, 5000);
+    return;
+  }
+  if (job.state === "done" && !job.total) return openReview(0); // всё уже распознано
+  showOcrSheet(job);
+}
+
+function showOcrSheet(job) {
+  ocr.active = true;
+  ocr.finished = false;
+  ocr.seen = new Set();
+  const steps = $("#ocrSteps");
+  steps.replaceChildren(...Array.from({ length: job.total }, (_, n) => Object.assign(el("span", "is-wait"), { textContent: n + 1 })));
+  steps.hidden = job.total > 10; // для большого числа страниц хватает полоски
+  $("#ocrBar").style.width = "0";
+  $("#ocrLabel").textContent = "";
+  $("#ocrSheet").hidden = false;
+  pushLayer(() => { // закрыли шторку: если задача ещё идёт, это отмена
+    ocr.active = false;
+    if (!ocr.finished) api("POST", "/api/ocr/cancel").catch(() => {});
+    leave($("#ocrSheet"));
+    if (!ocr.finished) api("GET", "/api/session").then(apply).catch(() => {});
+  });
+  pollOcr();
+}
+
+function setOcrLabel(text) {
+  const label = $("#ocrLabel");
+  if (label.textContent === text) return;
+  if (reduced || !label.textContent) { label.textContent = text; return; }
+  label.style.opacity = 0;
+  setTimeout(() => { label.textContent = text; label.style.opacity = 1; }, 140);
+}
+
+const CHECK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+
+function paintOcr(j) {
+  setOcrLabel(j.state === "queued" ? `Ты в очереди: ${j.position}-й` : `Страница ${Math.min(j.done + 1, j.total)} из ${j.total}`);
+  $("#ocrBar").style.width = `${j.total ? ((j.done + (j.state === "running" ? .5 : 0)) / j.total) * 100 : 0}%`;
+  $$("#ocrSteps span").forEach((step, k) => {
+    if (k < j.done) {
+      if (!step.classList.contains("is-done")) { step.className = "is-done"; step.innerHTML = CHECK; }
+    } else {
+      step.className = k === j.done && j.state === "running" ? "is-now" : "is-wait";
+    }
+  });
+  for (const id of j.finished) {
+    if (ocr.seen.has(id)) continue;
+    ocr.seen.add(id);
+    const item = state.items.find((i) => i.id === id);
+    if (item) item._got = true;
+    $(`#grid .page[data-key="${id}"]`)?.classList.add("got", "got-new"); // значок «Aa» на готовой странице
+  }
+}
+
+async function pollOcr() {
+  while (ocr.active) {
+    let j;
+    try { j = await api("GET", "/api/ocr"); } catch { await sleep(1500); continue; }
+    if (!ocr.active) return;
+    paintOcr(j);
+    if (j.state === "queued" || j.state === "running") { await sleep(700); continue; }
+    ocr.finished = true;
+    try { apply(await api("GET", "/api/session")); } catch { /* список обновится при следующем действии */ }
+    popLayer(); // закрывает шторку
+    if (j.state === "error") { haptic("error"); toast(j.error, 5000); }
+    else if (j.state === "done" && textItems().length) { haptic("success"); setTimeout(() => openReview(0), reduced ? 0 : 260); }
+    return;
+  }
+}
+
+// задача могла идти, пока мини-апп был закрыт
+async function resumeOcr() {
+  try {
+    const j = await api("GET", "/api/ocr");
+    if (j.state === "queued" || j.state === "running") showOcrSheet(j);
+  } catch { /* не критично */ }
+}
+
+/* проверка и правка текста */
+
+function fillText(box, paragraphs) {
+  box.replaceChildren();
+  for (const para of paragraphs.length ? paragraphs : [""]) {
+    const p = el("p");
+    para.split(new RegExp(`[${MARK_OPEN}${MARK_CLOSE}]`)).forEach((part, k) => { // нечётные куски — помеченные слова
+      if (!part) return;
+      if (k % 2) p.append(Object.assign(el("u"), { textContent: part }));
+      else p.append(part);
+    });
+    if (!p.childNodes.length) p.append(el("br"));
+    box.append(p);
+  }
+}
+
+function readText(box) {
+  const walk = (node) => [...node.childNodes].map((n) => (n.nodeType === 3 ? n.data : n.nodeName === "BR" ? "" : n.nodeName === "U"
+    ? MARK_OPEN + n.textContent + MARK_CLOSE : walk(n))).join("");
+  const out = [];
+  let inline = "";
+  const flush = () => { if (inline.trim()) out.push(inline); inline = ""; };
+  for (const n of box.childNodes) {
+    if (n.nodeType === 1 && (n.nodeName === "P" || n.nodeName === "DIV")) { flush(); out.push(walk(n)); }
+    else inline += n.nodeType === 3 ? n.data : walk({ childNodes: [n] });
+  }
+  flush();
+  return out.map((t) => t.replaceAll(" ", " ")).filter((t) => t.trim());
+}
+
+function openReview(start = 0) {
+  if (!textItems().length) return;
+  rv.i = Math.min(start, textItems().length - 1);
+  const node = $("#review");
+  node.hidden = false;
+  node.classList.add("fresh");
+  pushLayer(() => { flushText(); leave(node); });
+  renderReview(0);
+}
+
+function renderReview(dir) {
+  const items = textItems(), item = items[rv.i];
+  if (!item) return popLayer();
+  const box = $("#rvText");
+  $("#rvCount").textContent = `Страница ${rv.i + 1} из ${items.length}`;
+  $("#rvImg").src = item.thumb;
+  $("#rvImg").style.transform = rotation(item);
+  fillText(box, item.text);
+  updateLegend();
+  $("#rvNext").textContent = rv.i === items.length - 1 ? "Готово" : `Дальше · стр. ${rv.i + 2}`;
+  $("#rvPrev").style.opacity = rv.i === 0 ? .35 : 1;
+  $("#rvPrev").disabled = rv.i === 0;
+  if (dir && !reduced) box.animate([{ opacity: 0, transform: `translateX(${dir * 28}px)` }, { opacity: 1, transform: "none" }], { duration: 280, easing: EASE });
+  $("#review .review-body").scrollTo({ top: 0 });
+}
+
+function updateLegend() {
+  const legend = $("#rvLegend"), box = $("#rvText");
+  const empty = !readText(box).length;
+  legend.hidden = !empty && !box.querySelector("u");
+  if (empty) legend.textContent = "Текст на фото не нашёлся. Можно ввести его вручную или пропустить страницу.";
+  else legend.replaceChildren(Object.assign(el("u"), { textContent: "Подчёркнутые" }), " слова распознаны неуверенно, проверь их по фото");
+}
+
+function currentTextItem() { return textItems()[rv.i]; }
+
+function onTextInput() {
+  const item = currentTextItem();
+  if (!item) return;
+  const anchor = getSelection().anchorNode;
+  const mark = (anchor?.nodeType === 3 ? anchor.parentElement : anchor)?.closest?.("u");
+  if (mark && $("#rvText").contains(mark)) mark.replaceWith(...mark.childNodes); // слово поправили, пометка не нужна
+  item.text = readText($("#rvText"));
+  updateLegend();
+  debounced("text", flushText, 600);
+}
+
+// отправляет текст текущей страницы на сервер сразу
+function flushText() {
+  clearTimeout(timers.text);
+  const item = currentTextItem();
+  if (!item || $("#review").hidden) return Promise.resolve();
+  return api("PUT", `/api/items/${item.id}/text`, { text: item.text }).catch((err) => toast(err.message));
+}
+
+/* результат: Word, PDF или копирование */
+
+function openResult() {
+  const items = textItems();
+  const words = items.reduce((n, i) => n + i.text.reduce((m, t) => m + plainText(t).trim().split(/\s+/).filter(Boolean).length, 0), 0);
+  $("#resStat").textContent = `${items.length} ${plural(items.length, "страница", "страницы", "страниц")}, ${words} ${plural(words, "слово", "слова", "слов")}.`;
+  const node = $("#result");
+  node.hidden = false;
+  pushLayer(() => leave(node));
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return; } catch { /* пробуем запасной способ */ }
+  const area = Object.assign(el("textarea"), { value: text });
+  area.style.cssText = "position:fixed;opacity:0";
+  document.body.append(area);
+  area.select();
+  const ok = document.execCommand("copy");
+  area.remove();
+  if (!ok) throw new Error("Не получилось скопировать");
+}
+
+async function exportText(btn) {
+  if (btn.disabled) return;
+  const fmt = btn.dataset.fmt;
+  haptic("light");
+  btn.disabled = true;
+  btn.classList.add("loading");
+  try {
+    await flushText();
+    const res = await api("POST", "/api/export", { format: fmt });
+    if (fmt === "text") {
+      await copyText(res.text);
+      haptic("success");
+      toast("Текст скопирован");
+    } else {
+      haptic("success");
+      while (layers.length) popLayer();
+      showDoneDoc(fmt, res);
+    }
+  } catch (err) {
+    haptic("error");
+    toast(err.message, 5000);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("loading");
+  }
+}
+
+function showDoneDoc(fmt, res) {
+  $("#editor").hidden = true;
+  $("#moreBtn").hidden = true;
+  $("#done").hidden = false;
+  $("#doneTitle").replaceChildren("Готово.", el("br"), fmt === "docx" ? "Документ в чате" : "PDF с текстом в чате");
+  $("#doneLead").textContent = "Страницы остались в редакторе: из них можно собрать и обычный PDF.";
+  $("#doneIcon").textContent = fmt === "docx" ? "DOC" : "PDF";
+  $("#doneName").textContent = res.name;
+  $("#doneMeta").textContent = `${res.pages} ${plural(res.pages, "страница", "страницы", "страниц")} · ${res.words} ${plural(res.words, "слово", "слова", "слов")}`;
+}
+
 /* ---------------- helpers ---------------- */
 
 function el(tag, cls) {
@@ -481,10 +738,55 @@ const demoDb = {
   work_types: ["Реферат", "Доклад", "Эссе", "Контрольная работа", "Домашнее задание", "Курсовая работа", "Лабораторная работа", "Отчёт по практике"],
 };
 
+const M = (w) => MARK_OPEN + w + MARK_CLOSE;
+const DEMO_TEXT = [
+  [`Валовой внутренний продукт (ВВП) измеряет рыночную стоимость всех ${M("конечных")} товаров и услуг, произведённых в стране за год.`,
+   `Центральный банк управляет ${M("ключевой")} ставкой: её повышение сдерживает инфляцию, но замедляет рост экономики.`],
+  ["Различают номинальный и реальный ВВП. Реальный ВВП пересчитан в неизменных ценах, поэтому показывает рост " + M("выпуска") + ", а не цен.",
+   "Дефлятор ВВП отражает изменение общего уровня цен в экономике."],
+  ["Безработица бывает фрикционной, структурной и циклической. Естественный уровень безработицы включает первые две формы.",
+   `Закон Оукена связывает отставание ВВП от потенциального уровня с ${M("циклической")} безработицей.`],
+];
+let demoJob = null;
+
+// «сервер» распознавания: сначала очередь, потом по странице за 650 мс
+function demoJobView() {
+  const j = demoJob, t = Date.now() - j.start;
+  const done = j.frozen ?? Math.max(0, Math.min(j.total, Math.floor((t - 1200) / 650)));
+  j.todo.slice(0, done).forEach((id, n) => {
+    const item = demoDb.items.find((i) => i.id === id);
+    if (item && item.text == null) item.text = DEMO_TEXT[n % DEMO_TEXT.length];
+  });
+  const state = j.cancel ? "cancelled" : done >= j.total ? "done" : t < 1200 ? "queued" : "running";
+  return { state, total: j.total, done, position: state === "queued" ? 2 : 0, finished: j.todo.slice(0, done), error: "" };
+}
+
 async function demoApi(method, path, body) {
   await new Promise((r) => setTimeout(r, 120));
   const db = demoDb;
   const id = path.split("/")[3];
+  if (path === "/api/ocr") {
+    if (method === "GET") return demoJob ? demoJobView() : { state: "idle" };
+    const todo = db.items.filter((i) => i.kind === "image" && i.text == null).map((i) => i.id);
+    demoJob = { todo, total: todo.length, start: Date.now(), cancel: false };
+    return todo.length ? demoJobView() : { state: "done", total: 0, done: 0, position: 0, finished: [], error: "" };
+  }
+  if (path === "/api/ocr/cancel") {
+    if (demoJob) { demoJob.frozen = demoJobView().done; demoJob.cancel = true; }
+    return { ok: true };
+  }
+  if (path.endsWith("/text") && method === "PUT") {
+    db.items.find((i) => i.id === id).text = body.text;
+    return { ok: true };
+  }
+  if (path === "/api/export") {
+    const items = db.items.filter((i) => i.kind === "image" && i.text);
+    const paragraphs = items.flatMap((i) => i.text.map(plainText));
+    const words = paragraphs.reduce((n, t) => n + t.split(/\s+/).filter(Boolean).length, 0);
+    if (body.format === "text") return { ok: true, pages: items.length, words, text: paragraphs.join("\n\n") };
+    await new Promise((r) => setTimeout(r, 900));
+    return { ok: true, pages: items.length, words, name: `${db.options.filename || "Конспект"}.${body.format}`, size: 36000 };
+  }
   if (path === "/api/build") {
     await new Promise((r) => setTimeout(r, 900));
     const pages = db.items.reduce((n, i) => n + i.pages, 0) + (body.title.enabled ? 1 : 0);
@@ -581,6 +883,24 @@ function bind() {
     if (inTelegram) tg.showConfirm("Удалить все страницы?", (ok) => ok && go());
     else if (confirm("Удалить все страницы?")) go();
   };
+  $("#ocrBtn").onclick = () => (textItems().length === imageItems().length ? openReview(0) : startOcr());
+  $("#ocrOpen").onclick = () => (textItems().length ? openReview(0) : startOcr());
+  $("#ocrCancel").onclick = popLayer;
+  $("#rvClose").onclick = popLayer;
+  $("#rvPrev").onclick = () => { if (rv.i > 0) { flushText(); rv.i--; renderReview(-1); } };
+  $("#rvNext").onclick = () => {
+    flushText();
+    if (rv.i === textItems().length - 1) openResult();
+    else { rv.i++; renderReview(1); }
+  };
+  $("#rvPhoto").onclick = () => openViewer(slots().findIndex((sl) => sl.item?.id === currentTextItem()?.id));
+  $("#rvText").addEventListener("input", onTextInput);
+  $("#rvText").addEventListener("paste", (e) => { // вставляем только текст, без чужой вёрстки
+    e.preventDefault();
+    document.execCommand("insertText", false, (e.clipboardData || window.clipboardData).getData("text/plain"));
+  });
+  $("#resBack").onclick = popLayer;
+  $$("#result .opt").forEach((b) => (b.onclick = () => exportText(b)));
   $("#vClose").onclick = popLayer;
   $("#vPrev").onclick = () => { state.viewing--; renderViewer(-1); };
   $("#vNext").onclick = () => { state.viewing++; renderViewer(1); };
@@ -643,6 +963,7 @@ async function init() {
   else if (res.error) render();
   else apply(res.data);
   exitSplash();
+  if (!closed && !res.error) resumeOcr();
   if (res.error && !closed) toast(res.error.message, 6000);
 }
 

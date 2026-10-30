@@ -106,6 +106,17 @@
         <input type="checkbox" class="switch" data-title="enabled" aria-label="Добавить титульный лист">
       </div>
 
+      <div class="ocr-card" id="ocrCard" hidden>
+        <button class="ocr-open" id="ocrOpen" type="button">
+          <span class="ocr-mini" aria-hidden="true">Aa</span>
+          <span class="ocr-text">
+            <b id="ocrTitle">Распознать текст</b>
+            <span id="ocrSub"></span>
+          </span>
+        </button>
+        <button class="pill small primary" id="ocrBtn" type="button">Распознать</button>
+      </div>
+
       <div class="grid" id="grid"></div>
       <div class="spacer"></div>
 
@@ -123,10 +134,10 @@
     <div class="done-mark" aria-hidden="true">
       <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
     </div>
-    <h1 class="display">Готово.<br>PDF уже в чате</h1>
-    <p class="lead">Новые фото пойдут в следующий файл.</p>
+    <h1 class="display" id="doneTitle">Готово.<br>PDF уже в чате</h1>
+    <p class="lead" id="doneLead">Новые фото пойдут в следующий файл.</p>
     <div class="file-card">
-      <span class="file-icon" aria-hidden="true">PDF</span>
+      <span class="file-icon" id="doneIcon" aria-hidden="true">PDF</span>
       <div>
         <b id="doneName"></b>
         <span class="muted" id="doneMeta"></span>
@@ -181,6 +192,62 @@
       <label class="field"><span>Название PDF</span><input type="text" data-opt="filename" maxlength="80" placeholder="По умолчанию — дата и время"></label>
     </section>
   </div>
+
+  <!-- распознавание: прогресс -->
+  <div class="sheet-wrap" id="ocrSheet" hidden>
+    <div class="scrim"></div>
+    <section class="sheet" aria-label="Распознавание текста">
+      <div class="handle" aria-hidden="true"></div>
+      <h2 class="sheet-title">Распознаю текст</h2>
+      <p class="muted" id="ocrLabel" aria-live="polite"></p>
+      <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><i id="ocrBar"></i></div>
+      <div class="ocr-steps" id="ocrSteps"></div>
+      <button class="ghost" id="ocrCancel" type="button">Отменить</button>
+    </section>
+  </div>
+
+  <!-- распознавание: проверка и правка текста по страницам -->
+  <div class="review" id="review" hidden>
+    <div class="review-top">
+      <button class="round" id="rvClose" type="button" aria-label="Закрыть">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <span class="review-count" id="rvCount"></span>
+      <span class="round-space"></span>
+    </div>
+    <div class="review-body">
+      <button class="review-photo" id="rvPhoto" type="button" aria-label="Открыть фото"><img id="rvImg" alt=""><span>Открыть фото</span></button>
+      <div class="review-text" id="rvText" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Распознанный текст" spellcheck="false"></div>
+      <p class="legend" id="rvLegend"></p>
+    </div>
+    <div class="dock">
+      <button class="round big" id="rvPrev" type="button" aria-label="Предыдущая страница">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+      <button class="pill primary grow" id="rvNext" type="button"></button>
+    </div>
+  </div>
+
+  <!-- распознавание: что сделать с текстом -->
+  <section class="result" id="result" hidden>
+    <h1 class="title">Текст готов</h1>
+    <p class="muted" id="resStat"></p>
+    <div class="opts">
+      <button class="opt main" data-fmt="docx" type="button" style="--i: 0">
+        <span class="ic">DOC</span>
+        <span class="t"><b>Документ Word</b><span>Times New Roman 14, поля по ГОСТ. Придёт в чат файлом .docx</span></span>
+      </button>
+      <button class="opt" data-fmt="pdf" type="button" style="--i: 1">
+        <span class="ic">PDF</span>
+        <span class="t"><b>PDF с текстом</b><span>Страницы набраны текстом, его можно выделять и копировать</span></span>
+      </button>
+      <button class="opt" data-fmt="text" type="button" style="--i: 2">
+        <span class="ic">Aa</span>
+        <span class="t"><b>Копировать текст</b><span>Весь текст в буфер обмена</span></span>
+      </button>
+    </div>
+    <div class="dock"><button class="pill grow" id="resBack" type="button">Назад к страницам</button></div>
+  </section>
 
   <div class="viewer" id="viewer" hidden>
     <div class="viewer-top">

@@ -261,6 +261,94 @@ main { padding: 0 16px; }
   font-size: 14px; font-weight: 500; box-shadow: var(--shadow);
 }
 
+/* ---------- распознавание текста ---------- */
+.ocr-card { margin-top: 10px; display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 20px; background: var(--surface); }
+.ocr-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; border: 0; padding: 0; background: none; text-align: left; }
+.ocr-mini {
+  flex: none; width: 40px; height: 52px; border-radius: 6px; background: #fff; color: #2f2f38;
+  box-shadow: 0 0 0 1px var(--line); display: grid; place-items: center; font-size: 11px; font-weight: 700;
+}
+.ocr-text { min-width: 0; display: flex; flex-direction: column; }
+.ocr-text b { font-weight: 600; }
+.ocr-text span { color: var(--ink2); font-size: 13px; line-height: 1.3; }
+
+.page.got::after {
+  content: "Aa"; position: absolute; right: 8px; bottom: 8px; height: 26px; padding: 0 9px; border-radius: 13px;
+  display: grid; place-items: center; pointer-events: none;
+  background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
+}
+.page.got-new::after { animation: pop .4s var(--ease) both; }
+
+.sheet-title { margin-top: 6px; font-size: 24px; font-weight: 700; letter-spacing: -.03em; }
+#ocrLabel { margin-top: 6px; transition: opacity .14s var(--ease-soft); }
+.bar { margin-top: 16px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.bar i { display: block; width: 0; height: 100%; border-radius: 4px; background: var(--accent); transition: width .4s var(--ease-soft); }
+.ocr-steps { display: flex; gap: 8px; margin-top: 16px; }
+.ocr-steps[hidden] { display: none; }
+.ocr-steps span {
+  flex: 1; max-width: 56px; aspect-ratio: 3 / 4; max-height: 74px; border-radius: 10px; background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line); display: grid; place-items: center;
+  font-size: 13px; font-weight: 600; color: var(--ink2);
+  outline: 2px solid transparent; outline-offset: 2px; transition: opacity .3s var(--ease-soft), outline-color .3s var(--ease-soft);
+}
+.ocr-steps .is-wait { opacity: .45; }
+.ocr-steps .is-now { outline-color: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.ocr-steps .is-done svg { animation: pop .3s var(--ease) both; }
+@keyframes pulse { 50% { outline-color: color-mix(in srgb, var(--accent) 30%, transparent); } }
+.ghost { display: block; margin: 14px auto 0; border: 0; background: none; color: var(--ink2); font-size: 15px; font-weight: 500; padding: 8px 12px; }
+
+.review, .result { position: fixed; inset: 0; z-index: 10; background: var(--bg); display: flex; flex-direction: column; }
+.review-top { flex: none; display: flex; align-items: center; justify-content: space-between; margin: 12px 16px 0; height: 44px; }
+.review-count { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.review-body { flex: 1; overflow-y: auto; padding: 12px 16px calc(110px + env(safe-area-inset-bottom)); }
+.review-photo {
+  position: relative; display: block; width: 100%; height: 168px; border: 0; padding: 0; border-radius: 18px;
+  overflow: hidden; background: var(--surface); box-shadow: 0 0 0 1px var(--line);
+}
+.review-photo img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.review-photo span {
+  position: absolute; right: 10px; bottom: 10px; height: 28px; padding: 0 12px; border-radius: 14px;
+  background: rgba(11, 11, 15, .72); color: #fff; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center;
+}
+.review-text {
+  margin-top: 12px; padding: 16px; min-height: 160px; border-radius: 20px; background: var(--surface);
+  font-size: 16px; line-height: 1.5; outline: none; -webkit-user-select: text; user-select: text;
+}
+.review-text:focus { box-shadow: 0 0 0 2px var(--accent); }
+.review-text > * { margin: 0; }
+.review-text > * + * { margin-top: 10px; }
+.review-text u {
+  text-decoration: underline wavy var(--accent) 1.5px; text-underline-offset: 4px; border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  transition: background-color .3s var(--ease-soft), text-decoration-color .3s var(--ease-soft);
+}
+.legend { margin-top: 10px; font-size: 13px; color: var(--ink2); }
+.legend[hidden] { display: none; }
+.legend u { text-decoration: underline wavy var(--accent) 1.5px; text-underline-offset: 4px; color: var(--ink); }
+
+.result { padding: 68px 16px 0; overflow-y: auto; }
+.result .title { margin-top: 0; }
+.result .muted { margin-top: 6px; }
+.opts { margin-top: 22px; display: flex; flex-direction: column; gap: 8px; padding-bottom: 120px; }
+.opt {
+  display: flex; align-items: center; gap: 14px; padding: 14px; width: 100%; text-align: left;
+  border: 0; border-radius: 20px; background: var(--surface); color: var(--ink);
+}
+.opt.main { box-shadow: 0 0 0 1.5px var(--ink); }
+.opt .ic {
+  position: relative; flex: none; width: 44px; height: 44px; border-radius: 12px; background: var(--bg);
+  display: grid; place-items: center; font-size: 12px; font-weight: 700; letter-spacing: .02em;
+}
+.opt .t { display: flex; flex-direction: column; min-width: 0; }
+.opt .t b { font-weight: 600; }
+.opt .t span { font-size: 13px; color: var(--ink2); line-height: 1.3; }
+.opt:disabled { opacity: .7; }
+.opt.loading .ic { color: transparent; }
+.opt.loading .ic::after {
+  content: ""; position: absolute; width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid var(--ink); border-right-color: transparent; animation: spin .7s linear infinite;
+}
+
 /* ================= анимации ================= */
 :root { --ease: cubic-bezier(.2, .8, .2, 1); --ease-soft: cubic-bezier(.25, .6, .35, 1); }
 
@@ -278,6 +366,15 @@ main { padding: 0 16px; }
 .page-open { transition: transform .2s var(--ease-soft); }
 .page-open:active { transform: scale(.985); transition-duration: .08s; }
 .page-open img, .viewer-stage img { transition: transform .35s var(--ease); }
+
+/* распознавание: экраны проверки и результата */
+@keyframes review-in { from { opacity: 0; transform: translateX(28px); } }
+.review { animation: review-in .3s var(--ease); }
+.result { animation: rise .35s var(--ease); }
+.review.leaving, .result.leaving { animation: fadeout .2s ease forwards; }
+.result .opt { animation: rise .5s var(--ease) both; animation-delay: calc(var(--i) * 60ms + 80ms); }
+@keyframes mark-in { from { text-decoration-color: transparent; background-color: transparent; } }
+.review.fresh .review-text u { animation: mark-in .4s .35s var(--ease-soft) both; } /* подчёркивания проявляются после текста */
 
 /* заставка при входе: логотип проявляется за .24 с, дальше JS плавно меняет её на интерфейс */
 .splash { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: var(--bg); }
