@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass, field
 from io import BytesIO
 from pathlib import Path
 
+from .ocr import MARK_OPEN
 from .pdf import BuildOptions, open_image, pdf_page_count
 from .title import TitlePage
 
@@ -29,7 +30,21 @@ class Item:
     rotation: int = 0  # 0/90/180/270, по часовой
     pages: int = 1
     text: list[str] | None = None  # распознанные абзацы фото; None — ещё не распознавали
-    boxes: list[list[float]] | None = None  # рамки сомнительных слов в долях страницы, по порядку пометок в тексте
+    # пометки слов в тексте (между MARK_OPEN и MARK_CLOSE), по порядку появления: правки проверки или сомнения распознавания.
+    # У каждой kind, old, new, why, on (показано исправленное) и box — рамка слова в долях страницы
+    marks: list[dict] | None = None
+    checked: bool = False  # текст прошёл проверку моделью; иначе это сырой результат распознавания
+
+
+def _item(raw: dict) -> Item:
+    """Страница из манифеста; поля, которых больше нет (рамки старого вида), отбрасываются."""
+    raw = dict(raw)
+    boxes = raw.pop("boxes", None)
+    if boxes and raw.get("text") and "marks" not in raw:  # сессия от прошлой версии: рамки сомнительных слов
+        count = sum(p.count(MARK_OPEN) for p in raw["text"])
+        if count == len(boxes):
+            raw["marks"] = [{"kind": "un", "old": "", "new": "", "why": "", "on": True, "box": b} for b in boxes]
+    return Item(**{k: v for k, v in raw.items() if k in Item.__dataclass_fields__})
 
 
 @dataclass
@@ -69,7 +84,7 @@ class SessionStore:
             return Session()
         raw = json.loads(path.read_text("utf-8"))
         return Session(
-            items=[Item(**i) for i in raw.get("items", [])],
+            items=[_item(i) for i in raw.get("items", [])],
             options=BuildOptions.from_dict(raw.get("options", {})),
         )
 
@@ -166,12 +181,14 @@ class SessionStore:
                 item.rotation = rotation % 360
         self.save(uid, session)
 
-    def set_text(self, uid: int, item_id: str, paragraphs: list[str], boxes: list[list[float]] | None = None) -> None:
+    def set_text(self, uid: int, item_id: str, paragraphs: list[str], marks: list[dict] | None = None, checked: bool | None = None) -> None:
         session = self.load(uid)
         for item in session.items:
             if item.id == item_id:
                 item.text = paragraphs
-                item.boxes = boxes
+                item.marks = marks
+                if checked is not None:  # правка человека не меняет того, проверяла ли страницу модель
+                    item.checked = checked
                 self.save(uid, session)
                 return  # страницу могли удалить, пока шло распознавание: тогда писать некуда
 

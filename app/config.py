@@ -25,6 +25,8 @@ class Config:
     build_workers: int = 2  # сколько PDF собирается одновременно, остальные ждут
     ocr_workers: int = 2  # сколько страниц одновременно распознаётся; остальные ждут в очереди
     ocr_daily_pages: int = 100  # лимит распознанных страниц в сутки на человека (админам не действует)
+    anthropic_api_key: str = ""  # ключ API Claude: с ним распознанный текст проверяется на грамматику и смысл; без него проверки нет
+    proofread_model: str = "claude-haiku-5-5"  # лёгкая модель: страница обходится в доли цента
 
 
 def load_config() -> Config:
@@ -46,5 +48,7 @@ def load_config() -> Config:
         build_workers=max(1, int(os.getenv("BUILD_WORKERS", "2"))),
         ocr_workers=max(1, int(os.getenv("OCR_WORKERS", "2"))),
         ocr_daily_pages=int(os.getenv("OCR_DAILY_PAGES", "100")),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),
+        proofread_model=os.getenv("PROOFREAD_MODEL", "claude-haiku-5-5").strip() or "claude-haiku-5-5",
         admin_ids=frozenset(int(x) for x in re.split(r"[,\s]+", os.getenv("ADMIN_IDS", "")) if x.isdigit()),
     )

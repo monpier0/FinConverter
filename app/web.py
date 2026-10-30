@@ -12,7 +12,7 @@ from urllib.parse import parse_qsl
 from aiogram.types import BufferedInputFile
 from aiohttp import web
 
-from . import document, recognize
+from . import document, proofread, recognize
 from .config import ROOT, Config
 from .pdf import BuildOptions, safe_filename
 from .service import BuildError, build_and_send
@@ -187,13 +187,8 @@ async def ocr_cancel(request: web.Request):
 async def set_text(request: web.Request):
     body = await request.json()
     text = [str(p)[:20000] for p in body.get("text", [])][:2000]
-    boxes = []
-    for box in (body.get("boxes") or [])[:2000]:  # рамки сомнительных слов: [x, y, ширина, высота] в долях страницы
-        try:
-            boxes.append([min(max(float(v), 0.0), 1.0) for v in box[:4]])
-        except (TypeError, ValueError):
-            boxes.append([0.0, 0.0, 0.0, 0.0])
-    request.app["store"].set_text(request["uid"], request.match_info["item_id"], text, boxes if body.get("boxes") is not None else None)
+    marks = proofread.clean_marks(body.get("marks"), text)
+    request.app["store"].set_text(request["uid"], request.match_info["item_id"], text, marks)
     return web.json_response({"ok": True})
 
 

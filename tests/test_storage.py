@@ -83,8 +83,25 @@ def test_mid_preview_is_created_and_falls_back_to_thumb(tmp_path):
     assert list(store.dir(1).glob("*.jpg")) == []
 
 
-def test_set_text_keeps_boxes(tmp_path):
+def test_set_text_keeps_marks_and_checked_flag(tmp_path):
     store = SessionStore(tmp_path)
     item = store.add(1, photo(size=(300, 400)), "image")
-    store.set_text(1, item.id, ["a"], [[.1, .2, .3, .05]])
-    assert store.load(1).items[0].boxes == [[.1, .2, .3, .05]]
+    mark = {"kind": "ocr", "old": "a", "new": "b", "why": "", "on": True, "box": [.1, .2, .3, .05]}
+    store.set_text(1, item.id, ["a"], [mark], checked=True)
+    saved = store.load(1).items[0]
+    assert saved.marks == [mark] and saved.checked is True
+    store.set_text(1, item.id, ["правка человека"], None)  # правка человека не сбрасывает признак проверки
+    assert store.load(1).items[0].checked is True
+
+
+def test_old_session_with_boxes_is_converted_to_marks(tmp_path):
+    import json
+    from app.ocr import MARK_CLOSE, MARK_OPEN
+    store = SessionStore(tmp_path, 10)
+    folder = tmp_path / "7"
+    folder.mkdir()
+    old = {"id": "a", "kind": "image", "file": "a.jpg", "text": [f"x {MARK_OPEN}y{MARK_CLOSE}"], "boxes": [[.1, .1, .2, .2]]}
+    (folder / "session.json").write_text(json.dumps({"items": [old, {**old, "id": "b", "boxes": [[0, 0, 0, 0]] * 3}], "options": {}}))
+    a, b = store.load(7).items
+    assert a.marks == [{"kind": "un", "old": "", "new": "", "why": "", "on": True, "box": [.1, .1, .2, .2]}] and a.checked is False
+    assert b.marks is None  # рамок больше, чем пометок: не угадываем

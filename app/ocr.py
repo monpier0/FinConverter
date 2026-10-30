@@ -83,32 +83,51 @@ def recognize(img: Image.Image) -> list[Word]:
     return words
 
 
-def paragraphs_with_boxes(words: list[Word], size: tuple[int, int] = (1, 1)) -> tuple[list[str], list[list[float]]]:
-    """Слова страницы → (абзацы в порядке чтения, рамки сомнительных слов).
-    Сомнительные слова обёрнуты в MARK_OPEN/MARK_CLOSE, переносы «перено-/са» склеены.
-    Рамка слова — [x, y, ширина, высота] в долях размера страницы size; порядок рамок совпадает с порядком пометок в тексте."""
-    width, height = size
+@dataclass
+class Token:
+    """Слово страницы после склейки переносов: текст, сомнение Tesseract и рамка (x0, y0, x1, y1) в пикселях."""
+    text: str
+    unsure: bool
+    box: tuple[float, float, float, float]
+
+
+def layout(words: list[Word]) -> list[list[Token]]:
+    """Слова страницы → абзацы в порядке чтения; переносы «перено-/са» склеены."""
     paras: dict[tuple[int, int], dict[int, list[Word]]] = {}
     for w in words:
         paras.setdefault((w.block, w.par), {}).setdefault(w.line, []).append(w)
-    result: list[str] = []
-    boxes: list[list[float]] = []
+    result: list[list[Token]] = []
     for lines in paras.values():
-        tokens: list[list] = []  # [текст, сомнительное, (x0, y0, x1, y1)]
+        tokens: list[Token] = []
         for line in lines.values():
             for n, w in enumerate(line):
                 box = (w.x, w.y, w.x + w.w, w.y + w.h)
                 unsure = w.conf < UNSURE
-                if n == 0 and tokens and tokens[-1][0].endswith("-") and w.text[:1].islower():
+                if n == 0 and tokens and tokens[-1].text.endswith("-") and w.text[:1].islower():
                     prev = tokens[-1]
-                    tokens[-1] = [prev[0][:-1] + w.text, prev[1] or unsure,
-                                  (min(prev[2][0], box[0]), min(prev[2][1], box[1]), max(prev[2][2], box[2]), max(prev[2][3], box[3]))]
+                    tokens[-1] = Token(prev.text[:-1] + w.text, prev.unsure or unsure,
+                                       (min(prev.box[0], box[0]), min(prev.box[1], box[1]), max(prev.box[2], box[2]), max(prev.box[3], box[3])))
                 else:
-                    tokens.append([w.text, unsure, box])
-        for text, unsure, (x0, y0, x1, y1) in tokens:
-            if unsure:
-                boxes.append([round(x0 / width, 4), round(y0 / height, 4), round((x1 - x0) / width, 4), round((y1 - y0) / height, 4)])
-        result.append(" ".join(f"{MARK_OPEN}{t}{MARK_CLOSE}" if u else t for t, u, _ in tokens))
+                    tokens.append(Token(w.text, unsure, box))
+        result.append(tokens)
+    return result
+
+
+def norm_box(box: tuple[float, float, float, float], size: tuple[int, int]) -> list[float]:
+    """Рамка в пикселях → [x, y, ширина, высота] в долях размера страницы."""
+    width, height = size
+    x0, y0, x1, y1 = box
+    return [round(x0 / width, 4), round(y0 / height, 4), round((x1 - x0) / width, 4), round((y1 - y0) / height, 4)]
+
+
+def paragraphs_with_boxes(words: list[Word], size: tuple[int, int] = (1, 1)) -> tuple[list[str], list[list[float]]]:
+    """Слова страницы → (абзацы в порядке чтения, рамки сомнительных слов).
+    Сомнительные слова обёрнуты в MARK_OPEN/MARK_CLOSE. Порядок рамок совпадает с порядком пометок в тексте."""
+    result: list[str] = []
+    boxes: list[list[float]] = []
+    for tokens in layout(words):
+        boxes.extend(norm_box(t.box, size) for t in tokens if t.unsure)
+        result.append(" ".join(f"{MARK_OPEN}{t.text}{MARK_CLOSE}" if t.unsure else t.text for t in tokens))
     return result, boxes
 
 

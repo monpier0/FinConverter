@@ -169,13 +169,22 @@ def test_session_gives_mid_preview_and_serves_it(tmp_path):
     assert status == 200 and size > 1000 and different and bad == 403
 
 
-def test_set_text_accepts_boxes_and_clamps_them(tmp_path):
+def test_set_text_keeps_marks_clamps_boxes_and_drops_mismatched_ones(tmp_path):
+    mk = ocr.MARK_OPEN, ocr.MARK_CLOSE
+
     async def scenario(client, bot):
         H = {"X-Init-Data": init_data(7)}
         store = client.server.app["store"]
         item = store.add(7, photo(size=(300, 400)), "image")
-        r = await client.put(f"/api/items/{item.id}/text", json={"text": ["x"], "boxes": [[.1, .2, 2, "bad"], [.5, .5, .1, .1]]}, headers=H)
-        return r.status, store.load(7).items[0].boxes
+        text = [f"a {mk[0]}b{mk[1]} c {mk[0]}d{mk[1]}"]
+        marks = [{"kind": "ocr", "old": "bb", "new": "b", "why": "w", "on": True, "box": [.1, .2, 2, "bad"]},
+                 {"kind": "wat", "old": "d", "new": "d", "on": False, "box": [.5, .5, .1, .1]}]
+        r = await client.put(f"/api/items/{item.id}/text", json={"text": text, "marks": marks}, headers=H)
+        kept = store.load(7).items[0].marks
+        await client.put(f"/api/items/{item.id}/text", json={"text": text, "marks": marks[:1]}, headers=H)  # число пометок не сходится
+        return r.status, kept, store.load(7).items[0].marks
 
-    status, boxes = run_client(tmp_path, scenario)
-    assert status == 200 and boxes == [[0.0, 0.0, 0.0, 0.0], [.5, .5, .1, .1]]
+    status, kept, mismatched = run_client(tmp_path, scenario)
+    assert status == 200 and mismatched is None
+    assert kept[0] == {"kind": "ocr", "old": "bb", "new": "b", "why": "w", "on": True, "box": None}  # битую рамку отбрасываем
+    assert kept[1]["kind"] == "un" and kept[1]["on"] is False and kept[1]["box"] == [.5, .5, .1, .1]
