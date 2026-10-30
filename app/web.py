@@ -1,16 +1,20 @@
 """HTTP API мини-аппа + раздача статики."""
 
+import asyncio
 import hashlib
 import hmac
 import json
+import logging
 import time
 from dataclasses import asdict
 from urllib.parse import parse_qsl
 
+from aiogram.types import BufferedInputFile
 from aiohttp import web
 
+from . import document, recognize
 from .config import ROOT, Config
-from .pdf import BuildOptions
+from .pdf import BuildOptions, safe_filename
 from .service import BuildError, build_and_send
 from .storage import SessionStore, TooManyItems, UnsupportedFile
 from .title import WORK_TYPES, TitlePage
@@ -154,6 +158,60 @@ async def build(request: web.Request):
     return web.json_response({"ok": True, "pages": pages, "size": size})
 
 
+async def ocr_start(request: web.Request):
+    try:
+        job = recognize.start(request["uid"], request.app["store"], request.app["cfg"])
+    except recognize.RecognizeError as e:
+        return web.json_response({"error": e.message}, status=400)
+    return web.json_response(job.view())
+
+
+async def ocr_status(request: web.Request):
+    job = recognize.get(request["uid"])
+    return web.json_response(job.view() if job else {"state": "idle"})
+
+
+async def ocr_cancel(request: web.Request):
+    recognize.cancel(request["uid"])
+    return web.json_response({"ok": True})
+
+
+async def set_text(request: web.Request):
+    body = await request.json()
+    text = [str(p)[:20000] for p in body.get("text", [])][:2000]
+    request.app["store"].set_text(request["uid"], request.match_info["item_id"], text)
+    return web.json_response({"ok": True})
+
+
+async def export(request: web.Request):
+    """Собирает текст всех распознанных страниц в документ: docx и pdf уходят в чат, text возвращается."""
+    body = await request.json()
+    fmt = body.get("format")
+    store: SessionStore = request.app["store"]
+    session = store.load(request["uid"])
+    paragraphs = document.merge_pages([i.text for i in session.items if i.kind == "image" and i.text])
+    if not paragraphs:
+        return web.json_response({"error": "Текста нет: на фото ничего не распозналось"}, status=400)
+    stats = {"ok": True, "pages": sum(1 for i in session.items if i.text is not None),
+             "words": sum(len(p.split()) for p in paragraphs)}
+    if fmt == "text":
+        return web.json_response({**stats, "text": "\n\n".join(paragraphs)})
+    if fmt not in ("docx", "pdf"):
+        return web.json_response({"error": "Неизвестный формат"}, status=400)
+    try:
+        build = document.build_docx if fmt == "docx" else document.build_text_pdf
+        data = await asyncio.to_thread(build, paragraphs)
+    except Exception as e:  # например, на сервере нет шрифта для PDF
+        logging.exception("Экспорт не удался")
+        return web.json_response({"error": "Не получилось собрать документ" + (" из-за шрифта" if "font" in str(e).lower() else "")}, status=500)
+    stem = safe_filename(session.options.filename, "Конспект").removesuffix(".pdf")
+    name = f"{stem}.{fmt}"
+    caption = "Документ Word с распознанным текстом. Проверь его: распознавание бывает неточным." if fmt == "docx" \
+        else "PDF, набранный из распознанного текста."
+    await request.app["bot"].send_document(request["uid"], BufferedInputFile(data, filename=name), caption=caption)
+    return web.json_response({**stats, "name": name, "size": len(data)})
+
+
 async def thumb(request: web.Request):
     cfg: Config = request.app["cfg"]
     uid, item_id = int(request.match_info["uid"]), request.match_info["item_id"]
@@ -183,5 +241,10 @@ def create_app(cfg: Config, store: SessionStore, bot) -> web.Application:
     app.router.add_post("/api/options", set_options)
     app.router.add_post("/api/title", set_title)
     app.router.add_post("/api/build", build)
+    app.router.add_post("/api/ocr", ocr_start)
+    app.router.add_get("/api/ocr", ocr_status)
+    app.router.add_post("/api/ocr/cancel", ocr_cancel)
+    app.router.add_put("/api/items/{item_id}/text", set_text)
+    app.router.add_post("/api/export", export)
     app.router.add_get("/api/thumb/{uid}/{item_id}", thumb)
     return app

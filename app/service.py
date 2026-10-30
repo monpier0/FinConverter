@@ -2,7 +2,6 @@
 
 import asyncio
 import time
-from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Awaitable, Callable
 
@@ -28,8 +27,6 @@ class BuildError(Exception):
 
 
 _building: set[int] = set()
-_ocr_slots: asyncio.Semaphore | None = None
-_ocr_waiting = 0
 
 
 def is_building() -> bool:
@@ -40,27 +37,6 @@ def human_size(n: int) -> str:
     if n < 1024 * 1024:
         return f"{max(n // 1024, 1)} КБ"
     return f"{n / 1024 / 1024:.1f} МБ".replace(".", ",")
-
-
-@asynccontextmanager
-async def _ocr_turn(cfg: Config, say: Status):
-    """Очередь на распознавание: одновременно работают cfg.ocr_workers сборок, остальные ждут."""
-    global _ocr_slots, _ocr_waiting
-    if _ocr_slots is None:
-        _ocr_slots = asyncio.Semaphore(cfg.ocr_workers)
-    if _ocr_slots.locked():
-        _ocr_waiting += 1
-        try:
-            await say(f"Распознавание сейчас занято, ты в очереди: {_ocr_waiting}-й. Это займёт несколько минут.")
-            await _ocr_slots.acquire()
-        finally:
-            _ocr_waiting -= 1
-    else:
-        await _ocr_slots.acquire()
-    try:
-        yield
-    finally:
-        _ocr_slots.release()
 
 
 async def build_and_send(bot: Bot, store: SessionStore, uid: int, cfg: Config,
@@ -118,7 +94,10 @@ async def build_and_send(bot: Bot, store: SessionStore, uid: int, cfg: Config,
 
         args = (store.dir(uid), session.items, session.options, prefix, progress if ocr_pages else None)
         if ocr_pages:
-            async with _ocr_turn(cfg, say):
+            async def waiting(place: int) -> None:
+                await say(f"Распознавание сейчас занято, ты в очереди: {place}-й. Это займёт несколько минут.")
+
+            async with ocr.turn(cfg.ocr_workers, waiting):
                 data, pages = await asyncio.to_thread(build_pdf, *args)
         else:
             data, pages = await asyncio.to_thread(build_pdf, *args)

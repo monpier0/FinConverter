@@ -4,13 +4,16 @@
 текст в тех же местах: по такому PDF работают поиск и копирование.
 """
 
+import asyncio
 import csv
 import io
 import os
 import shutil
 import subprocess
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from io import BytesIO
+from typing import Awaitable, Callable
 
 from PIL import Image
 from reportlab.pdfbase.pdfmetrics import stringWidth
@@ -22,6 +25,9 @@ LANGS = "rus+eng"
 MAX_SIDE = 2400  # распознаём уменьшенную копию: дольше не значит точнее
 MIN_CONF = 30  # слова, в которых Tesseract сильно сомневается, в слой не берём
 TIMEOUT = 120
+UNSURE = 75  # уверенность Tesseract ниже этой: слово помечаем, пусть человек проверит по фото
+# границы помеченных слов внутри текста страницы (служебные символы, в документ не попадают)
+MARK_OPEN, MARK_CLOSE = "\ue000", "\ue001"
 
 
 class OcrError(Exception):
@@ -35,6 +41,10 @@ class Word:
     y: float
     w: float
     h: float
+    block: int = 0  # где слово стоит в вёрстке страницы: блок, абзац, строка
+    par: int = 0
+    line: int = 0
+    conf: float = 100  # уверенность распознавания, 0–100
 
 
 def available() -> bool:
@@ -68,8 +78,60 @@ def recognize(img: Image.Image) -> list[Word]:
         if row.get("level") != "5" or not text or float(row["conf"]) < MIN_CONF:
             continue
         words.append(Word(text, int(row["left"]) / scale, int(row["top"]) / scale,
-                          int(row["width"]) / scale, int(row["height"]) / scale))
+                          int(row["width"]) / scale, int(row["height"]) / scale,
+                          int(row["block_num"]), int(row["par_num"]), int(row["line_num"]), float(row["conf"])))
     return words
+
+
+def paragraphs(words: list[Word]) -> list[str]:
+    """Слова страницы → абзацы в порядке чтения. Сомнительные слова обёрнуты в MARK_OPEN/MARK_CLOSE,
+    переносы «перено-/са» склеены."""
+    paras: dict[tuple[int, int], dict[int, list[Word]]] = {}
+    for w in words:
+        paras.setdefault((w.block, w.par), {}).setdefault(w.line, []).append(w)
+    result = []
+    for lines in paras.values():
+        tokens: list[list] = []  # [текст, сомнительное]
+        for line in lines.values():
+            for n, w in enumerate(line):
+                unsure = w.conf < UNSURE
+                if n == 0 and tokens and tokens[-1][0].endswith("-") and w.text[:1].islower():
+                    tokens[-1] = [tokens[-1][0][:-1] + w.text, tokens[-1][1] or unsure]
+                else:
+                    tokens.append([w.text, unsure])
+        result.append(" ".join(f"{MARK_OPEN}{t}{MARK_CLOSE}" if u else t for t, u in tokens))
+    return result
+
+
+def plain(text: str) -> str:
+    return text.replace(MARK_OPEN, "").replace(MARK_CLOSE, "")
+
+
+_slots: asyncio.Semaphore | None = None
+_waiting = 0
+
+
+@asynccontextmanager
+async def turn(workers: int, on_wait: Callable[[int], Awaitable[None]] | None = None):
+    """Очередь на распознавание: одновременно работают `workers` задач, остальные ждут.
+    on_wait(место) вызывается, если пришлось встать в очередь."""
+    global _slots, _waiting
+    if _slots is None:
+        _slots = asyncio.Semaphore(workers)
+    if _slots.locked():
+        _waiting += 1
+        try:
+            if on_wait:
+                await on_wait(_waiting)
+            await _slots.acquire()
+        finally:
+            _waiting -= 1
+    else:
+        await _slots.acquire()
+    try:
+        yield
+    finally:
+        _slots.release()
 
 
 def text_layer(words: list[Word], size_px: tuple[int, int], dpi: float) -> bytes:

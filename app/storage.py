@@ -25,6 +25,7 @@ class Item:
     name: str = ""
     rotation: int = 0  # 0/90/180/270, по часовой
     pages: int = 1
+    text: list[str] | None = None  # распознанные абзацы фото; None — ещё не распознавали
 
 
 @dataclass
@@ -126,6 +127,14 @@ class SessionStore:
             if item.id == item_id:
                 item.rotation = rotation % 360
         self.save(uid, session)
+
+    def set_text(self, uid: int, item_id: str, paragraphs: list[str]) -> None:
+        session = self.load(uid)
+        for item in session.items:
+            if item.id == item_id:
+                item.text = paragraphs
+                self.save(uid, session)
+                return  # страницу могли удалить, пока шло распознавание: тогда писать некуда
 
     def set_options(self, uid: int, options: BuildOptions) -> None:
         session = self.load(uid)
