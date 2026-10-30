@@ -46,6 +46,7 @@ body {
 h1, h2, p { margin: 0; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button, label { cursor: pointer; }
+button, label, select, input, .page-open { touch-action: manipulation; } /* без задержки и зума по двойному касанию */
 
 .muted { color: var(--ink2); }
 .small { font-size: 13px; }
@@ -107,12 +108,12 @@ main { padding: 0 16px; }
 .switch {
   appearance: none; -webkit-appearance: none; margin: 0; flex: none; cursor: pointer;
   width: 46px; height: 28px; border-radius: 14px; background: var(--line); position: relative;
-  transition: background .3s var(--ease-soft);
+  transition: background .22s var(--ease-soft);
 }
 :root[data-theme="dark"] .switch:not(:checked) { background: #2c2c31; }
 .switch::after {
   content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%;
-  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .3s var(--ease-soft);
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .22s var(--ease-soft);
 }
 .switch:checked { background: var(--accent); }
 .switch:checked::after { transform: translateX(18px); }
@@ -261,20 +262,21 @@ main { padding: 0 16px; }
 }
 
 /* ================= анимации ================= */
-:root { --ease: cubic-bezier(.2, .8, .2, 1); --ease-soft: cubic-bezier(.4, 0, .2, 1); }
+:root { --ease: cubic-bezier(.2, .8, .2, 1); --ease-soft: cubic-bezier(.25, .6, .35, 1); }
 
-/* отклик на нажатие: мягко, без рывка; отпускание чуть медленнее нажатия */
+/* отклик на нажатие: начинается сразу (кривая без медленного старта), нажатие короткое, возврат быстрый,
+   иначе после касания кнопка «зависает» в нажатом виде */
 .pill, .chip, .round, .tool, .seg button, .title-card, .steps li, .field {
-  transition: transform .32s var(--ease-soft), background-color .3s var(--ease-soft), color .3s var(--ease-soft),
-    border-color .3s var(--ease-soft), box-shadow .3s var(--ease-soft), opacity .3s var(--ease-soft);
+  transition: transform .2s var(--ease-soft), background-color .18s var(--ease-soft), color .18s var(--ease-soft),
+    border-color .18s var(--ease-soft), box-shadow .18s var(--ease-soft), opacity .18s var(--ease-soft);
 }
 .pill:active:not(:disabled), .chip:active, .round:active, .tool:active:not(:disabled), .seg button:active {
   transform: scale(.97);
-  transition-duration: .14s;
+  transition-duration: .08s;
 }
-.title-card:has(.title-card-open:active) { transform: scale(.99); transition-duration: .14s; }
-.page-open { transition: transform .32s var(--ease-soft); }
-.page-open:active { transform: scale(.985); transition-duration: .14s; }
+.title-card:has(.title-card-open:active) { transform: scale(.99); transition-duration: .08s; }
+.page-open { transition: transform .2s var(--ease-soft); }
+.page-open:active { transform: scale(.985); transition-duration: .08s; }
 .page-open img, .viewer-stage img { transition: transform .35s var(--ease); }
 
 /* заставка при входе: логотип проявляется за .24 с, дальше JS плавно меняет её на интерфейс */

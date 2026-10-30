@@ -251,7 +251,15 @@ async function rotate(item) {
 
 async function remove(item) {
   haptic("medium");
-  apply(await api("DELETE", `/api/items/${item.id}`));
+  // убираем страницу сразу, не дожидаясь сервера; если он не ответил, возвращаем реальный список
+  state.items = state.items.filter((i) => i.id !== item.id);
+  render();
+  try {
+    apply(await api("DELETE", `/api/items/${item.id}`));
+  } catch (err) {
+    toast(err.message);
+    apply(await api("GET", "/api/session"));
+  }
 }
 
 const timers = {};
