@@ -5,7 +5,7 @@ from pypdf import PdfReader
 
 from app import ocr
 from app.document import merge_pages
-from app.ocr import MARK_CLOSE, MARK_OPEN, Word, paragraphs, plain
+from app.ocr import MARK_CLOSE, MARK_OPEN, Word, paragraphs, paragraphs_with_boxes, plain
 from tests.helpers import FONT, photo
 
 needs_tesseract = pytest.mark.skipif(not (ocr.available() and FONT.exists()), reason="нужны tesseract и шрифт DejaVu")
@@ -21,6 +21,15 @@ def test_paragraphs_join_hyphenation_and_mark_unsure_words():
     got = paragraphs(words)
     assert [plain(p) for p in got] == ["Ставка рефинансирования влияет на рост.", "Новый абзац"]
     assert f"{MARK_OPEN}влияет{MARK_CLOSE}" in got[0] and f"{MARK_OPEN}абзац{MARK_CLOSE}" in got[1]
+
+
+def test_boxes_follow_marked_words_and_merge_hyphenation():
+    words = [Word("Ставка", 0, 0, 100, 20, 1, 1, 1, 95), Word("рефинансиро-", 100, 0, 100, 20, 1, 1, 1, 50),
+             Word("вания", 0, 40, 60, 20, 1, 1, 2, 90), Word("рост", 70, 40, 30, 20, 1, 1, 2, 40)]
+    paras, boxes = paragraphs_with_boxes(words, (200, 100))
+    assert paras == [f"Ставка {MARK_OPEN}рефинансирования{MARK_CLOSE} {MARK_OPEN}рост{MARK_CLOSE}"]
+    # рамка склеенного слова охватывает обе его части, вторая рамка у «рост»
+    assert boxes == [[0.0, 0.0, 1.0, .6], [.35, .4, .15, .2]]
 
 
 def test_hyphen_before_capital_letter_is_kept():

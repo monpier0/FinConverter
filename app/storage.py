@@ -16,7 +16,8 @@ from pathlib import Path
 from .pdf import BuildOptions, open_image, pdf_page_count
 from .title import TitlePage
 
-THUMB_SIZE = (360, 480)
+THUMB_SIZE = (360, 480)  # плёнка внизу
+MID_SIZE = (900, 1200)  # страница на сцене и в проверке текста: на экранах с высокой плотностью миниатюра была бы мыльной
 
 
 @dataclass
@@ -28,6 +29,7 @@ class Item:
     rotation: int = 0  # 0/90/180/270, по часовой
     pages: int = 1
     text: list[str] | None = None  # распознанные абзацы фото; None — ещё не распознавали
+    boxes: list[list[float]] | None = None  # рамки сомнительных слов в долях страницы, по порядку пометок в тексте
 
 
 @dataclass
@@ -96,6 +98,9 @@ class SessionStore:
             thumb = img.copy()
             thumb.thumbnail(THUMB_SIZE)
             thumb.save(folder / f"{item_id}.thumb.jpg", "JPEG", quality=80)
+            mid = img.copy()
+            mid.thumbnail(MID_SIZE)
+            mid.save(folder / f"{item_id}.mid.jpg", "JPEG", quality=82)
             return Item(id=item_id, kind="image", file=file, name=name)
 
         file = f"{item_id}.pdf"
@@ -110,6 +115,7 @@ class SessionStore:
     def _discard(self, uid: int, item: Item) -> None:
         (self.dir(uid) / item.file).unlink(missing_ok=True)
         (self.dir(uid) / f"{item.id}.thumb.jpg").unlink(missing_ok=True)
+        (self.dir(uid) / f"{item.id}.mid.jpg").unlink(missing_ok=True)
 
     def commit(self, uid: int, item: Item) -> None:
         """Вносит подготовленный файл в манифест. Синхронный и без await: в event loop он атомарен."""
@@ -142,8 +148,7 @@ class SessionStore:
         session = self.load(uid)
         for item in session.items:
             if item.id == item_id:
-                (self.dir(uid) / item.file).unlink(missing_ok=True)
-                (self.dir(uid) / f"{item.id}.thumb.jpg").unlink(missing_ok=True)
+                self._discard(uid, item)
         session.items = [i for i in session.items if i.id != item_id]
         self.save(uid, session)
 
@@ -161,11 +166,12 @@ class SessionStore:
                 item.rotation = rotation % 360
         self.save(uid, session)
 
-    def set_text(self, uid: int, item_id: str, paragraphs: list[str]) -> None:
+    def set_text(self, uid: int, item_id: str, paragraphs: list[str], boxes: list[list[float]] | None = None) -> None:
         session = self.load(uid)
         for item in session.items:
             if item.id == item_id:
                 item.text = paragraphs
+                item.boxes = boxes
                 self.save(uid, session)
                 return  # страницу могли удалить, пока шло распознавание: тогда писать некуда
 
@@ -235,3 +241,8 @@ class SessionStore:
 
     def thumb_path(self, uid: int, item_id: str) -> Path:
         return self.dir(uid) / f"{item_id}.thumb.jpg"
+
+    def mid_path(self, uid: int, item_id: str) -> Path:
+        """Крупное превью; у страниц, добавленных до его появления, его нет, тогда отдаём миниатюру."""
+        path = self.dir(uid) / f"{item_id}.mid.jpg"
+        return path if path.exists() else self.thumb_path(uid, item_id)

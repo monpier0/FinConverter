@@ -6,7 +6,7 @@
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 
@@ -75,10 +75,11 @@ def cancel(uid: int) -> None:
         job.cancel = True
 
 
-def _page_paragraphs(path: Path, rotation: int, opts: BuildOptions) -> list[str]:
-    # те же поворот и режим («Скан» сильно помогает), что и в итоговом PDF
-    img, _ = _render_page(open_image(path), rotation, opts)
-    return ocr.paragraphs(ocr.recognize(img))
+def _page_paragraphs(path: Path, rotation: int, opts: BuildOptions) -> tuple[list[str], list[list[float]]]:
+    # тот же поворот и режим («Скан» сильно помогает), что и в итоговом PDF, но без полей A4: рамки слов
+    # считаются в долях самой страницы, чтобы их можно было наложить на фото
+    img, _ = _render_page(open_image(path), rotation, replace(opts, page="original"))
+    return ocr.paragraphs_with_boxes(ocr.recognize(img), img.size)
 
 
 async def _run(job: Job, uid: int, todo: list[str], store: SessionStore, cfg: Config) -> None:
@@ -99,8 +100,8 @@ async def _run(job: Job, uid: int, todo: list[str], store: SessionStore, cfg: Co
                 if item is None:  # страницу удалили, пока ждали
                     job.total -= 1
                     continue
-                paragraphs = await asyncio.to_thread(_page_paragraphs, store.dir(uid) / item.file, item.rotation, session.options)
-                store.set_text(uid, item_id, paragraphs)
+                paragraphs, boxes = await asyncio.to_thread(_page_paragraphs, store.dir(uid) / item.file, item.rotation, session.options)
+                store.set_text(uid, item_id, paragraphs, boxes)
                 store.ocr_add(uid, today, 1)
                 job.done += 1
                 job.finished.append(item_id)

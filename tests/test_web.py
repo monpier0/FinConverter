@@ -151,3 +151,31 @@ def test_export_send_failure_is_reported(tmp_path):
 
     status, error = run_client(tmp_path, scenario)
     assert status == 502 and "чат" in error
+
+
+def test_session_gives_mid_preview_and_serves_it(tmp_path):
+    async def scenario(client, bot):
+        H = {"X-Init-Data": init_data(7)}
+        store = client.server.app["store"]
+        item = store.add(7, photo(size=(1600, 2200)), "image")
+        data = await (await client.get("/api/session", headers=H)).json()
+        mid = data["items"][0]["mid"]
+        r = await client.get(mid)
+        body = await r.read()
+        bad = await client.get(mid.replace("s=", "s=0"))
+        return r.status, len(body), data["items"][0]["thumb"] != mid, bad.status
+
+    status, size, different, bad = run_client(tmp_path, scenario)
+    assert status == 200 and size > 1000 and different and bad == 403
+
+
+def test_set_text_accepts_boxes_and_clamps_them(tmp_path):
+    async def scenario(client, bot):
+        H = {"X-Init-Data": init_data(7)}
+        store = client.server.app["store"]
+        item = store.add(7, photo(size=(300, 400)), "image")
+        r = await client.put(f"/api/items/{item.id}/text", json={"text": ["x"], "boxes": [[.1, .2, 2, "bad"], [.5, .5, .1, .1]]}, headers=H)
+        return r.status, store.load(7).items[0].boxes
+
+    status, boxes = run_client(tmp_path, scenario)
+    assert status == 200 and boxes == [[0.0, 0.0, 0.0, 0.0], [.5, .5, .1, .1]]

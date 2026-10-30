@@ -74,7 +74,9 @@ def _session_json(request: web.Request) -> web.Response:
         data = asdict(item)
         data.pop("file")
         if item.kind == "image":
-            data["thumb"] = f"/api/thumb/{uid}/{item.id}?s={thumb_sig(cfg.bot_token, uid, item.id)}"
+            sig = thumb_sig(cfg.bot_token, uid, item.id)
+            data["thumb"] = f"/api/thumb/{uid}/{item.id}?s={sig}"
+            data["mid"] = f"/api/thumb/{uid}/{item.id}?s={sig}&v=mid"
         items.append(data)
     return web.json_response({
         "items": items,
@@ -185,7 +187,13 @@ async def ocr_cancel(request: web.Request):
 async def set_text(request: web.Request):
     body = await request.json()
     text = [str(p)[:20000] for p in body.get("text", [])][:2000]
-    request.app["store"].set_text(request["uid"], request.match_info["item_id"], text)
+    boxes = []
+    for box in (body.get("boxes") or [])[:2000]:  # рамки сомнительных слов: [x, y, ширина, высота] в долях страницы
+        try:
+            boxes.append([min(max(float(v), 0.0), 1.0) for v in box[:4]])
+        except (TypeError, ValueError):
+            boxes.append([0.0, 0.0, 0.0, 0.0])
+    request.app["store"].set_text(request["uid"], request.match_info["item_id"], text, boxes if body.get("boxes") is not None else None)
     return web.json_response({"ok": True})
 
 
@@ -227,7 +235,8 @@ async def thumb(request: web.Request):
     uid, item_id = int(request.match_info["uid"]), request.match_info["item_id"]
     if not hmac.compare_digest(request.query.get("s", ""), thumb_sig(cfg.bot_token, uid, item_id)):
         raise web.HTTPForbidden()
-    path = request.app["store"].thumb_path(uid, item_id)
+    store: SessionStore = request.app["store"]
+    path = store.mid_path(uid, item_id) if request.query.get("v") == "mid" else store.thumb_path(uid, item_id)
     if not path.exists():
         raise web.HTTPNotFound()
     return web.FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})

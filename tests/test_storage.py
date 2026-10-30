@@ -31,7 +31,7 @@ def test_item_limit_discards_files(tmp_path):
             await store.add_async(1, photo(size=(300, 400)), "image")
 
     asyncio.run(run())
-    assert len(list(store.dir(1).glob("*.jpg"))) == 4  # две страницы и две миниатюры, лишний файл не остался
+    assert len(list(store.dir(1).glob("*.jpg"))) == 6  # две страницы по три файла (оригинал, плёнка, крупное превью), лишнее не осталось
 
 
 def test_page_limit_counts_pdf_pages(tmp_path):
@@ -68,3 +68,23 @@ def test_cleanup_removes_only_stale_sessions(tmp_path):
     assert not store.dir(1).exists() and store.dir(2).exists()
     assert (tmp_path / "_titles" / "1.json").exists()  # запомненные ФИО остаются
     assert store.cleanup(0) == 0  # 0 отключает очистку
+
+
+def test_mid_preview_is_created_and_falls_back_to_thumb(tmp_path):
+    store = SessionStore(tmp_path)
+    item = store.add(1, photo(size=(2000, 2800)), "image")
+    mid = store.mid_path(1, item.id)
+    assert mid.name.endswith(".mid.jpg") and mid.exists()
+    from PIL import Image
+    assert max(Image.open(mid).size) <= 1200
+    mid.unlink()  # страница из старой сессии: крупного превью нет
+    assert store.mid_path(1, item.id) == store.thumb_path(1, item.id)
+    store.remove(1, item.id)
+    assert list(store.dir(1).glob("*.jpg")) == []
+
+
+def test_set_text_keeps_boxes(tmp_path):
+    store = SessionStore(tmp_path)
+    item = store.add(1, photo(size=(300, 400)), "image")
+    store.set_text(1, item.id, ["a"], [[.1, .2, .3, .05]])
+    assert store.load(1).items[0].boxes == [[.1, .2, .3, .05]]
