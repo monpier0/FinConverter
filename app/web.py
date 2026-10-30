@@ -148,7 +148,7 @@ async def build(request: web.Request):
         if isinstance(body.get("title"), dict):
             store.save_title(request["uid"], TitlePage.from_dict(body["title"]))
     try:
-        pages, size = await build_and_send(request.app["bot"], store, request["uid"])
+        pages, size = await build_and_send(request.app["bot"], store, request["uid"], request.app["cfg"])
     except BuildError as e:
         return web.json_response({"error": e.message}, status=400)
     return web.json_response({"ok": True, "pages": pages, "size": size})

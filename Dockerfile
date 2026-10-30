@@ -1,9 +1,11 @@
 FROM python:3.12-slim
 
 # Liberation Serif метрически совпадает с Times New Roman — нужен для титульного листа,
-# git и ssh — для команды /update (когда клон репозитория смонтирован в /app)
+# git и ssh — для команды /update (когда клон репозитория смонтирован в /app),
+# tesseract с русским и английским — для распознавания текста на фото
 RUN apt-get update \
     && apt-get install -y --no-install-recommends fonts-liberation git openssh-client \
+        tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -104,7 +104,7 @@ async def cmd_start(message: Message, cfg: Config):
         "<b>FinConverter</b> собирает фото конспектов, сканы и PDF в один файл.\n\n"
         "Пришли фото: по одному, альбомом или файлом (файлом качество выше). "
         "Порядок страниц, поворот, режим «Скан» и титульный лист настраиваются в редакторе.\n\n"
-        "/pdf — собрать файл\n/title — титульный лист\n/clear — начать заново",
+        "/pdf — собрать файл\n/title — титульный лист\n/ocr — распознавание текста\n/clear — начать заново",
         reply_markup=kb,
     )
 
@@ -150,22 +150,26 @@ async def on_document(message: Message, bot: Bot, cfg: Config, store: SessionSto
 
 
 @router.message(Command("pdf"))
-async def cmd_pdf(message: Message, bot: Bot, store: SessionStore, notifier: StatusNotifier):
-    await _build(message, bot, store, notifier, message.from_user.id)
+async def cmd_pdf(message: Message, bot: Bot, cfg: Config, store: SessionStore, notifier: StatusNotifier):
+    await _build(message, bot, cfg, store, notifier, message.from_user.id)
 
 
 @router.callback_query(F.data == "build")
-async def cb_build(call: CallbackQuery, bot: Bot, store: SessionStore, notifier: StatusNotifier):
+async def cb_build(call: CallbackQuery, bot: Bot, cfg: Config, store: SessionStore, notifier: StatusNotifier):
     await call.answer("Собираю…")
     await call.message.edit_reply_markup(reply_markup=None)
-    await _build(call.message, bot, store, notifier, call.from_user.id)
+    await _build(call.message, bot, cfg, store, notifier, call.from_user.id)
 
 
-async def _build(message: Message, bot: Bot, store: SessionStore, notifier: StatusNotifier, uid: int):
+async def _build(message: Message, bot: Bot, cfg: Config, store: SessionStore, notifier: StatusNotifier, uid: int):
     progress = await message.answer("Собираю PDF…")
+
+    async def status(text: str) -> None:  # очередь и ход распознавания показываем в этом же сообщении
+        await progress.edit_text(text)
+
     try:
         await bot.send_chat_action(uid, "upload_document")
-        await build_and_send(bot, store, uid)
+        await build_and_send(bot, store, uid, cfg, status)
         notifier.forget(uid)
     except BuildError as e:
         await message.answer(e.message)
@@ -203,6 +207,20 @@ async def cmd_update(message: Message, cfg: Config):
         _updating = False
     await asyncio.sleep(2)  # Telegram должен успеть подтвердить саму команду, иначе после старта она придёт снова
     os._exit(0)  # дальше Docker (restart policy) поднимает бота уже с новым кодом
+
+
+@router.message(Command("ocr"))
+async def cmd_ocr(message: Message, cfg: Config, store: SessionStore):
+    uid = message.from_user.id
+    session = store.load(uid)
+    session.options.ocr = not session.options.ocr
+    store.set_options(uid, session.options)
+    if session.options.ocr:
+        limit = "" if uid in cfg.admin_ids or not cfg.ocr_daily_pages else f" Лимит: {cfg.ocr_daily_pages} стр. в сутки."
+        await message.answer("Распознавание текста включено: в следующем PDF текст можно будет искать и копировать. "
+                             "Работает на печатном тексте, рукописный читается плохо. Сборка станет дольше." + limit)
+    else:
+        await message.answer("Распознавание текста выключено.")
 
 
 @router.message(Command("clear"))

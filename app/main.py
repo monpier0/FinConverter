@@ -29,6 +29,7 @@ async def main() -> None:
     await bot.set_my_commands([
         BotCommand(command="pdf", description="Собрать PDF"),
         BotCommand(command="title", description="Титульный лист"),
+        BotCommand(command="ocr", description="Распознавание текста"),
         BotCommand(command="clear", description="Начать заново"),
         BotCommand(command="help", description="Как пользоваться"),
     ])

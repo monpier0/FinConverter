@@ -4,10 +4,12 @@ import re
 from dataclasses import dataclass, fields
 from io import BytesIO
 from pathlib import Path
-from typing import IO, Iterable
+from typing import IO, Callable, Iterable
 
 from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ImageOps
 from pypdf import PdfReader, PdfWriter
+
+from . import ocr
 
 try:  # фото с iPhone, отправленные файлом, приходят в HEIC
     from pillow_heif import register_heif_opener
@@ -32,6 +34,7 @@ class BuildOptions:
     mode: str = "color"  # "color" | "gray" | "scan"
     quality: str = "medium"  # "high" | "medium" | "low"
     filename: str = ""
+    ocr: bool = False  # невидимый текстовый слой: по PDF работают поиск и копирование
 
     @classmethod
     def from_dict(cls, raw: dict) -> "BuildOptions":
@@ -43,6 +46,7 @@ class BuildOptions:
         if opts.quality not in QUALITY:
             opts.quality = "medium"
         opts.filename = str(opts.filename)[:80]
+        opts.ocr = bool(opts.ocr)
         return opts
 
 
@@ -110,28 +114,41 @@ def _render_page(img: Image.Image, rotation: int, opts: BuildOptions) -> tuple[I
     return img, max(img.size) / A4_INCHES[1]
 
 
-def build_pdf(folder: Path, items: Iterable, opts: BuildOptions, prefix: bytes | None = None) -> tuple[bytes, int]:
+def build_pdf(folder: Path, items: Iterable, opts: BuildOptions, prefix: bytes | None = None,
+              progress: Callable[[int, int], None] | None = None) -> tuple[bytes, int]:
     """items — объекты с полями kind/file/rotation (storage.Item); prefix — готовые страницы
-    в начало (титульный лист). Возвращает (pdf, число страниц)."""
+    в начало (титульный лист); progress(готово, всего) вызывается после каждого файла.
+    Возвращает (pdf, число страниц)."""
     _, jpeg_quality = QUALITY[opts.quality]
+    items = list(items)
     writer = PdfWriter()
     if prefix:
         writer.append(PdfReader(BytesIO(prefix)))
 
-    for item in items:
+    for done, item in enumerate(items, 1):
         path = folder / item.file
         if item.kind == "image":
             page_img, dpi = _render_page(open_image(path), item.rotation, opts)
             buf = BytesIO()
             page_img.save(buf, "PDF", resolution=dpi, quality=jpeg_quality)
             buf.seek(0)
-            writer.append(PdfReader(buf))
+            page = PdfReader(buf).pages[0]
+            if opts.ocr:
+                try:
+                    if words := ocr.recognize(page_img):
+                        layer = PdfReader(BytesIO(ocr.text_layer(words, page_img.size, dpi))).pages[0]
+                        page.merge_page(layer)
+                except ocr.OcrError:
+                    pass  # страница без текстового слоя лучше, чем PDF, который не собрался
+            writer.add_page(page)
         else:
             reader = PdfReader(path)
             for page in reader.pages:
                 if item.rotation:
                     page.rotate(item.rotation)
                 writer.add_page(page)
+        if progress:
+            progress(done, len(items))
 
     writer.compress_identical_objects(remove_identicals=True, remove_orphans=True)
     out = BytesIO()

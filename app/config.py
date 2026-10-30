@@ -20,6 +20,8 @@ class Config:
     dev_user_id: int | None  # для отладки мини-аппа в обычном браузере без Telegram
     proxy: str = ""  # прокси до api.telegram.org, если Telegram недоступен напрямую
     admin_ids: frozenset[int] = frozenset()  # кому можно /update
+    ocr_workers: int = 2  # сколько страниц одновременно распознаётся; остальные ждут в очереди
+    ocr_daily_pages: int = 100  # лимит распознанных страниц в сутки на человека (админам не действует)
 
 
 def load_config() -> Config:
@@ -36,5 +38,7 @@ def load_config() -> Config:
         max_items=int(os.getenv("MAX_ITEMS", "100")),
         dev_user_id=int(dev_user) if dev_user else None,
         proxy=os.getenv("PROXY_URL", "").strip(),
+        ocr_workers=max(1, int(os.getenv("OCR_WORKERS", "2"))),
+        ocr_daily_pages=int(os.getenv("OCR_DAILY_PAGES", "100")),
         admin_ids=frozenset(int(x) for x in re.split(r"[,\s]+", os.getenv("ADMIN_IDS", "")) if x.isdigit()),
     )

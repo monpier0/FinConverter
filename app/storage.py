@@ -155,5 +155,21 @@ class SessionStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(asdict(title), ensure_ascii=False), "utf-8")
 
+    # сколько страниц человек уже распознал сегодня (лимит, чтобы один не занял сервер на час)
+    def _ocr_path(self, uid: int) -> Path:
+        return self.root / "_ocr" / f"{uid}.json"
+
+    def ocr_used(self, uid: int, today: str) -> int:
+        path = self._ocr_path(uid)
+        if not path.exists():
+            return 0
+        raw = json.loads(path.read_text("utf-8"))
+        return int(raw.get("pages", 0)) if raw.get("date") == today else 0
+
+    def ocr_add(self, uid: int, today: str, pages: int) -> None:
+        path = self._ocr_path(uid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"date": today, "pages": self.ocr_used(uid, today) + pages}), "utf-8")
+
     def thumb_path(self, uid: int, item_id: str) -> Path:
         return self.dir(uid) / f"{item_id}.thumb.jpg"

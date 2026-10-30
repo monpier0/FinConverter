@@ -91,6 +91,11 @@ def _register_fonts() -> tuple[str, str]:
     raise FontMissing("Нет шрифта Times New Roman или Liberation Serif — задай TITLE_FONT/TITLE_FONT_BOLD")
 
 
+def text_font() -> str:
+    """Шрифт с кириллицей и латиницей: им же рисуется невидимый текстовый слой при распознавании."""
+    return _register_fonts()[0]
+
+
 def render_title(tp: TitlePage, year: int | None = None) -> bytes:
     regular, bold = _register_fonts()
     year = year or date.today().year
