@@ -15,7 +15,7 @@ Telegram-бот для студентов: присылаешь фото кон�
 - **Мини-апп:** перетаскивание страниц, поворот, удаление, просмотр, загрузка из галереи, шторка титульного листа. Шрифт Onest, монохром с синим акцентом. Светлая и тёмная тема переключаются вслед за темой Telegram.
 - Понимает HEIC с iPhone, PNG с прозрачностью и EXIF-поворот.
 
-Команды: `/pdf` собирает файл, `/title` показывает и включает титульный лист, `/clear` начинает заново, `/help` показывает подсказку.
+Команды: `/pdf` собирает файл, `/title` показывает и включает титульный лист, `/clear` начинает заново, `/help` показывает подсказку. Скрытая команда `/update` обновляет бота на сервере из git, только для админов (см. «Деплой»).
 
 ## Запуск
 
@@ -44,13 +44,23 @@ cloudflared tunnel --url http://localhost:8080
 ## Деплой
 
 ```bash
+git clone <репозиторий> /opt/finconverter && cd /opt/finconverter
+cp .env.example .env     # BOT_TOKEN, WEBAPP_URL, ADMIN_IDS
 docker build -t finconverter .
-docker run -d --restart unless-stopped -p 8080:8080 \
-  -e BOT_TOKEN=... -e WEBAPP_URL=https://твой-домен \
-  -v finconverter-data:/data finconverter
+docker run -d --name finconverter --restart unless-stopped -p 127.0.0.1:8082:8080 \
+  --env-file .env -v finconverter-data:/data -v /opt/finconverter:/app finconverter
 ```
 
-`WEBAPP_URL` — публичный HTTPS-адрес, который проксирует на порт 8080 (nginx/Caddy с сертификатом). Состояние проекта и следующие шаги — в [CLAUDE.md](CLAUDE.md).
+`WEBAPP_URL` — публичный HTTPS-адрес, который проксирует на порт контейнера (nginx/Caddy с сертификатом). Состояние проекта и следующие шаги — в [CLAUDE.md](CLAUDE.md).
+
+### Обновление командой `/update`
+
+Клон репозитория монтируется в контейнер как `/app` (`-v /opt/finconverter:/app`). Админ пишет боту `/update`: бот делает `git pull --ff-only`, доставляет зависимости, если изменился `requirements.txt`, и перезапускается. Перезапуск делает Docker (`--restart unless-stopped`), после старта бот пишет «Бот перезапущен. Версия: …». Обновляется ветка, на которой стоит клон. Если менялись `Dockerfile` или системные пакеты, образ придётся пересобрать вручную.
+
+- Список админов: `ADMIN_IDS=123456789` в `.env` (id через запятую). Пока он пуст, на `/update` бот отвечает вашим id. В список команд бота `/update` не попадает.
+- Серверу нужен доступ на чтение репозитория: публичный репозиторий или deploy key (`git config core.sshCommand "ssh -i … -o IdentitiesOnly=yes"` в клоне, ключ тоже монтируется в контейнер).
+- Образ нужно пересобрать один раз, чтобы в нём появился git. Дальше пересборка нужна только при смене `Dockerfile`.
+- Вне Docker (`dev.sh`) `/update` подтянет код и завершит процесс, поднимать его снова нужно самому.
 
 ## Устройство
 

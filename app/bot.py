@@ -1,4 +1,5 @@
 import asyncio
+import os
 from html import escape
 from io import BytesIO
 
@@ -12,9 +13,10 @@ from aiogram.types import (
     WebAppInfo,
 )
 
+from . import updater
 from .config import Config
 from .pdf import safe_filename
-from .service import BuildError, build_and_send
+from .service import BuildError, build_and_send, is_building
 from .storage import SessionStore, TooManyItems, UnsupportedFile
 
 router = Router()
@@ -149,6 +151,43 @@ async def _build(message: Message, bot: Bot, store: SessionStore, notifier: Stat
         await message.answer(e.message)
     finally:
         await progress.delete()
+
+
+_updating = False
+
+
+@router.message(Command("update"))
+async def cmd_update(message: Message, cfg: Config):
+    global _updating
+    uid = message.from_user.id
+    if not cfg.admin_ids:
+        await message.answer(f"Команда выключена. Чтобы включить, впиши свой id в ADMIN_IDS: <code>{uid}</code>")
+        return
+    if uid not in cfg.admin_ids:
+        return
+    if not updater.available():
+        await message.answer("Обновление недоступно: код запущен не из git-клона. Смонтируй клон в /app (см. README).")
+        return
+    if _updating or is_building():
+        await message.answer("Сейчас идёт сборка или обновление, повтори через минуту.")
+        return
+
+    _updating = True
+    progress = await message.answer("Проверяю обновления…")
+    try:
+        commits = await updater.update()
+        if not commits:
+            await progress.edit_text(f"Уже последняя версия: <code>{escape(await updater.version())}</code>")
+            return
+        updater.mark_restart(cfg.data_dir, uid)
+        await progress.edit_text("Обновлено, перезапускаюсь…\n<pre>" + escape("\n".join(commits)) + "</pre>")
+    except updater.UpdateError as e:
+        await progress.edit_text(f"Не удалось обновить:\n<pre>{escape(str(e))}</pre>")
+        return
+    finally:
+        _updating = False
+    await asyncio.sleep(2)  # Telegram должен успеть подтвердить саму команду, иначе после старта она придёт снова
+    os._exit(0)  # дальше Docker (restart policy) поднимает бота уже с новым кодом
 
 
 @router.message(Command("clear"))

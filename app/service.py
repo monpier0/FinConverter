@@ -22,6 +22,10 @@ class BuildError(Exception):
 _building: set[int] = set()
 
 
+def is_building() -> bool:
+    return bool(_building)
+
+
 def human_size(n: int) -> str:
     if n < 1024 * 1024:
         return f"{max(n // 1024, 1)} КБ"

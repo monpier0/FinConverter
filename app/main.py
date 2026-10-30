@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from html import escape
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -8,6 +9,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import BotCommand, MenuButtonWebApp, WebAppInfo
 from aiohttp import web
 
+from . import updater
 from .bot import StatusNotifier, router
 from .config import load_config
 from .storage import SessionStore
@@ -39,6 +41,12 @@ async def main() -> None:
     await runner.setup()
     await web.TCPSite(runner, cfg.host, cfg.port).start()
     logging.info("Mini app: http://%s:%s (public: %s)", cfg.host, cfg.port, cfg.webapp_url or "не задан")
+
+    if uid := updater.pop_restart(cfg.data_dir):  # перезапуск после /update — сообщаем, что всё поднялось
+        try:
+            await bot.send_message(uid, f"Бот перезапущен. Версия: <code>{escape(await updater.version())}</code>")
+        except Exception:
+            logging.exception("Не удалось сообщить об обновлении")
 
     try:
         await dp.start_polling(bot)

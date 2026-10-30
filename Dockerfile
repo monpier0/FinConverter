@@ -1,8 +1,9 @@
 FROM python:3.12-slim
 
-# Liberation Serif метрически совпадает с Times New Roman — нужен для титульного листа
+# Liberation Serif метрически совпадает с Times New Roman — нужен для титульного листа,
+# git и ssh — для команды /update (когда клон репозитория смонтирован в /app)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-liberation \
+    && apt-get install -y --no-install-recommends fonts-liberation git openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

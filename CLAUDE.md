@@ -25,6 +25,12 @@ Telegram-бот с мини-аппом для студентов Финансо�
 - **API мини-аппа** (`app/web.py`, aiohttp в том же процессе, что и бот):
   авторизация по подписи `Telegram.WebApp.initData` (HMAC от токена), превью
   страниц по подписанным ссылкам.
+- **Деплой и `/update`**: бот на VDS (Ubuntu 24, Амстердам, Docker + Caddy) по адресу
+  `finconverter.194-41-113-226.sslip.io` (контейнер на `127.0.0.1:8082`; на сервере ещё два
+  чужих бота и `starosta` на порту 8000, их адрес `194-41-113-226.sslip.io` не трогать).
+  `/update` (`app/updater.py`, только `ADMIN_IDS`) делает `git pull --ff-only` в смонтированном
+  клоне `/opt/finconverter` и перезапускает процесс, Docker поднимает его снова.
+  `PROXY_URL` нужен, если Telegram недоступен напрямую (локально из РФ).
 - **Логотип**: лист с загнутым уголком цвета лайм, строки на нём образуют F
   (`assets/logo.svg`, аватарка для BotFather — `assets/bot-avatar.png`).
 - **Макет** на канвасе Claude: https://claude.ai/artifact/QWpPxUsmYCgKVYid3dpAuS
