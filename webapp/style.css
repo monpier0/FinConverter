@@ -29,6 +29,10 @@
   color-scheme: dark;
 }
 
+/* место под скролл-бар резервируется сразу: в десктопном Telegram он появляется, когда отрисуется
+   содержимое, и без этого весь экран на миг уезжает влево на ширину полосы */
+html:not(.framed) { scrollbar-gutter: stable; }
+
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
 
