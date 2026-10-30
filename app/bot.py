@@ -21,6 +21,26 @@ from .storage import SessionStore, TooManyItems, UnsupportedFile
 
 router = Router()
 
+CLOSED = "Бот пока работает в закрытом режиме."
+
+
+async def admin_only(handler, event: Message | CallbackQuery, data: dict):
+    """Пока бот закрытый: все сообщения и нажатия от тех, кого нет в ADMIN_IDS, не доходят до хендлеров."""
+    cfg: Config = data["cfg"]
+    uid = data["event_from_user"].id
+    if uid in cfg.admin_ids:
+        return await handler(event, data)
+    if isinstance(event, CallbackQuery):
+        await event.answer(CLOSED, show_alert=True)
+    elif cfg.admin_ids:
+        await event.answer(CLOSED)
+    else:  # ADMIN_IDS не задан: никого не пускаем, но подсказываем владельцу его id
+        await event.answer(f"{CLOSED} Чтобы открыть доступ себе, впиши свой id в ADMIN_IDS: <code>{uid}</code>")
+
+
+router.message.outer_middleware(admin_only)
+router.callback_query.outer_middleware(admin_only)
+
 TG_DOWNLOAD_LIMIT = 20 * 1024 * 1024  # Bot API отдаёт ботам файлы до 20 МБ
 STATUS_DELAY = 1.2  # ждём, пока догрузится весь альбом, и отвечаем одним сообщением
 
@@ -160,11 +180,6 @@ _updating = False
 async def cmd_update(message: Message, cfg: Config):
     global _updating
     uid = message.from_user.id
-    if not cfg.admin_ids:
-        await message.answer(f"Команда выключена. Чтобы включить, впиши свой id в ADMIN_IDS: <code>{uid}</code>")
-        return
-    if uid not in cfg.admin_ids:
-        return
     if not updater.available():
         await message.answer("Обновление недоступно: код запущен не из git-клона. Смонтируй клон в /app (см. README).")
         return

@@ -47,6 +47,8 @@ async def auth_middleware(request: web.Request, handler):
     cfg: Config = request.app["cfg"]
     user = validate_init_data(request.headers.get("X-Init-Data", ""), cfg.bot_token)
     if user and user.get("id"):
+        if int(user["id"]) not in cfg.admin_ids:  # пока мини-апп закрыт для всех, кроме админов
+            return web.json_response({"error": "Мини-апп пока доступен только администраторам"}, status=403)
         request["uid"] = int(user["id"])
     elif cfg.dev_user_id:
         request["uid"] = cfg.dev_user_id

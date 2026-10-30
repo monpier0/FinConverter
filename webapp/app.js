@@ -30,7 +30,7 @@ async function api(method, path, body) {
   }
   const res = await fetch(path, { method, headers, body: payload });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Что-то пошло не так");
+  if (!res.ok) throw Object.assign(new Error(data.error || "Что-то пошло не так"), { status: res.status });
   return data;
 }
 
@@ -629,8 +629,11 @@ async function init() {
   try {
     apply(await api("GET", "/api/session"));
   } catch (err) {
-    render();
-    toast(err.message, 6000);
+    if (err.status === 403) $("#closed").hidden = false; // бот закрыт для всех, кроме админов
+    else {
+      render();
+      toast(err.message, 6000);
+    }
   }
 }
 
