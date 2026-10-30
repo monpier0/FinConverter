@@ -17,7 +17,7 @@ from . import updater
 from .config import Config
 from .pdf import safe_filename
 from .service import BuildError, build_and_send, is_building
-from .storage import SessionStore, TooManyItems, UnsupportedFile
+from .storage import SessionStore, TooManyItems, TooManyPages, UnsupportedFile
 
 router = Router()
 
@@ -118,9 +118,12 @@ async def _add(message: Message, bot: Bot, cfg: Config, store: SessionStore, not
     buf = BytesIO()
     await bot.download(file_id, destination=buf)
     try:
-        store.add(uid, buf.getvalue(), kind, name)
+        await store.add_async(uid, buf.getvalue(), kind, name)
     except TooManyItems:
         await message.reply(f"Максимум {cfg.max_items} файлов в одном PDF. Собери этот и начни следующий.")
+        return
+    except TooManyPages:
+        await message.reply(f"Максимум {cfg.max_pages} страниц в одном PDF. Собери этот и начни следующий.")
         return
     except UnsupportedFile:
         await message.reply("Не получилось открыть файл. Подходят JPG, PNG, HEIC и PDF.")

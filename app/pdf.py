@@ -150,7 +150,10 @@ def build_pdf(folder: Path, items: Iterable, opts: BuildOptions, prefix: bytes |
         if progress:
             progress(done, len(items))
 
-    writer.compress_identical_objects(remove_identicals=True, remove_orphans=True)
+    try:
+        writer.compress_identical_objects(remove_identicals=True, remove_unreferenced=True)
+    except TypeError:  # pypdf старше 6: параметр назывался remove_orphans
+        writer.compress_identical_objects(remove_identicals=True, remove_orphans=True)
     out = BytesIO()
     writer.write(out)
     return out.getvalue(), len(writer.pages)

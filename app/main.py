@@ -16,10 +16,21 @@ from .storage import SessionStore
 from .web import create_app
 
 
+async def cleanup_loop(store: SessionStore, ttl_days: float) -> None:
+    """Раз в несколько часов удаляет давно заброшенные сессии, иначе фото копятся на диске."""
+    while True:
+        try:
+            if removed := await asyncio.to_thread(store.cleanup, ttl_days):
+                logging.info("Удалено заброшенных сессий: %s", removed)
+        except Exception:
+            logging.exception("Очистка сессий не удалась")
+        await asyncio.sleep(6 * 3600)
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     cfg = load_config()
-    store = SessionStore(cfg.data_dir, cfg.max_items)
+    store = SessionStore(cfg.data_dir, cfg.max_items, cfg.max_pages)
     session = AiohttpSession(proxy=cfg.proxy) if cfg.proxy else None
     bot = Bot(cfg.bot_token, session=session, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
@@ -49,9 +60,11 @@ async def main() -> None:
         except Exception:
             logging.exception("Не удалось сообщить об обновлении")
 
+    cleaner = asyncio.create_task(cleanup_loop(store, cfg.session_ttl_days))
     try:
         await dp.start_polling(bot)
     finally:
+        cleaner.cancel()
         await runner.cleanup()
         await bot.session.close()
 

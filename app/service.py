@@ -27,6 +27,7 @@ class BuildError(Exception):
 
 
 _building: set[int] = set()
+_build_slots: asyncio.Semaphore | None = None
 
 
 def is_building() -> bool:
@@ -100,7 +101,11 @@ async def build_and_send(bot: Bot, store: SessionStore, uid: int, cfg: Config,
             async with ocr.turn(cfg.ocr_workers, waiting):
                 data, pages = await asyncio.to_thread(build_pdf, *args)
         else:
-            data, pages = await asyncio.to_thread(build_pdf, *args)
+            global _build_slots
+            if _build_slots is None:
+                _build_slots = asyncio.Semaphore(cfg.build_workers)  # при наплыве сборки идут по очереди, а не все разом
+            async with _build_slots:
+                data, pages = await asyncio.to_thread(build_pdf, *args)
 
         if len(data) > TG_UPLOAD_LIMIT:
             raise BuildError(

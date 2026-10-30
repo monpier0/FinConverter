@@ -225,8 +225,9 @@ async function onFiles(e) {
   files.forEach((f) => fd.append("file", f, f.name));
   toast(`Загружаю ${files.length} ${plural(files.length, "файл", "файла", "файлов")}…`, 60000);
   try {
-    apply(await api("POST", "/api/upload", fd));
+    const data = await api("POST", "/api/upload", fd);
     hideToast();
+    apply(data); // ошибки по отдельным файлам показываются уже после того, как погасло «Загружаю…»
   } catch (err) {
     toast(err.message);
   }
@@ -247,8 +248,13 @@ async function rotate(item) {
   }
   const big = $("#vStage img");
   if (big && state.viewing >= 0) big.style.transform = rotation(item);
-  const data = await api("POST", `/api/items/${item.id}/rotate`, { rotation: item.rotation });
-  state.items = data.items.map((i) => (i.id === item.id ? item : i));
+  try {
+    const data = await api("POST", `/api/items/${item.id}/rotate`, { rotation: item.rotation });
+    state.items = data.items.map((i) => (i.id === item.id ? item : i));
+  } catch (err) {
+    toast(err.message);
+    apply(await api("GET", "/api/session").catch(() => ({ items: state.items, options: state.options, title: state.title, work_types: state.workTypes })));
+  }
 }
 
 async function remove(item) {
@@ -353,22 +359,30 @@ function popLayer() {
   if (inTelegram && !layers.length) tg.BackButton.hide();
 }
 
-// прячем после анимации ухода (класс .leaving в CSS)
+// прячем после анимации ухода (класс .leaving в CSS). Таймер хранится на узле: если слой успели
+// открыть снова, show() его отменяет, иначе старый таймер спрятал бы уже открытый слой
 function leave(node, ms = 220) {
+  clearTimeout(node._leave);
   node.classList.add("leaving");
-  setTimeout(() => { node.hidden = true; node.classList.remove("leaving"); }, reduced ? 0 : ms);
+  node._leave = setTimeout(() => { node.hidden = true; node.classList.remove("leaving"); }, reduced ? 0 : ms);
+}
+
+function show(node) {
+  clearTimeout(node._leave);
+  node.classList.remove("leaving");
+  node.hidden = false;
 }
 
 function openSheet(id) {
   const sheet = $("#" + id);
-  if (!sheet.hidden) return;
-  sheet.hidden = false;
+  if (!sheet.hidden && !sheet.classList.contains("leaving")) return;
+  show(sheet);
   pushLayer(() => leave(sheet));
 }
 
 function openViewer(idx) {
   state.viewing = idx;
-  $("#viewer").hidden = false;
+  show($("#viewer"));
   pushLayer(() => { state.viewing = -1; leave($("#viewer"), 200); });
   renderViewer();
 }
@@ -453,7 +467,7 @@ function showOcrSheet(job) {
   steps.hidden = job.total > 10; // для большого числа страниц хватает полоски
   $("#ocrBar").style.width = "0";
   $("#ocrLabel").textContent = "";
-  $("#ocrSheet").hidden = false;
+  show($("#ocrSheet"));
   pushLayer(() => { // закрыли шторку: если задача ещё идёт, это отмена
     ocr.active = false;
     if (!ocr.finished) api("POST", "/api/ocr/cancel").catch(() => {});
@@ -550,7 +564,7 @@ function openReview(start = 0) {
   if (!textItems().length) return;
   rv.i = Math.min(start, textItems().length - 1);
   const node = $("#review");
-  node.hidden = false;
+  show(node);
   node.classList.add("fresh");
   pushLayer(() => { flushText(); leave(node); });
   renderReview(0);
@@ -608,7 +622,7 @@ function openResult() {
   const words = items.reduce((n, i) => n + i.text.reduce((m, t) => m + plainText(t).trim().split(/\s+/).filter(Boolean).length, 0), 0);
   $("#resStat").textContent = `${items.length} ${plural(items.length, "страница", "страницы", "страниц")}, ${words} ${plural(words, "слово", "слова", "слов")}.`;
   const node = $("#result");
-  node.hidden = false;
+  show(node);
   pushLayer(() => leave(node));
 }
 
@@ -695,8 +709,7 @@ let toastTimer;
 function toast(text, ms = 3000) {
   const t = $("#toast");
   t.textContent = text;
-  t.classList.remove("leaving");
-  t.hidden = false;
+  show(t);
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, ms);
 }
@@ -918,7 +931,12 @@ function bind() {
       onStart: () => haptic("medium"),
       onEnd: async () => {
         const ids = $$("#grid .page[data-id]").map((n) => n.dataset.id);
-        apply(await api("POST", "/api/order", { ids }));
+        try {
+          apply(await api("POST", "/api/order", { ids }));
+        } catch (err) {
+          toast(err.message);
+          apply(await api("GET", "/api/session").catch(() => ({ items: state.items, options: state.options, title: state.title, work_types: state.workTypes })));
+        }
       },
     });
   }

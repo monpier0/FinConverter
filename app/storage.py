@@ -4,8 +4,10 @@
 каждый вызов атомарен — альбом из 10 фото не перетрёт манифест.
 """
 
+import asyncio
 import json
 import shutil
+import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from io import BytesIO
@@ -38,14 +40,19 @@ class TooManyItems(Exception):
     pass
 
 
+class TooManyPages(Exception):
+    pass
+
+
 class UnsupportedFile(Exception):
     pass
 
 
 class SessionStore:
-    def __init__(self, root: Path, max_items: int = 100):
+    def __init__(self, root: Path, max_items: int = 100, max_pages: int = 300):
         self.root = root
         self.max_items = max_items
+        self.max_pages = max_pages
         root.mkdir(parents=True, exist_ok=True)
 
     def dir(self, uid: int) -> Path:
@@ -71,10 +78,9 @@ class SessionStore:
         tmp.write_text(json.dumps(data, ensure_ascii=False), "utf-8")
         tmp.replace(self._manifest(uid))
 
-    def add(self, uid: int, data: bytes, kind: str, name: str = "") -> Item:
-        session = self.load(uid)
-        if len(session.items) >= self.max_items:
-            raise TooManyItems
+    def prepare(self, uid: int, data: bytes, kind: str, name: str = "") -> Item:
+        """Тяжёлая часть добавления: разбирает файл и пишет его в папку сессии, но манифест не трогает,
+        поэтому её можно звать из потока. Файл становится страницей после commit()."""
         item_id = uuid.uuid4().hex[:12]
         folder = self.dir(uid)
         folder.mkdir(parents=True, exist_ok=True)
@@ -90,19 +96,46 @@ class SessionStore:
             thumb = img.copy()
             thumb.thumbnail(THUMB_SIZE)
             thumb.save(folder / f"{item_id}.thumb.jpg", "JPEG", quality=80)
-            item = Item(id=item_id, kind="image", file=file, name=name)
-        else:
-            file = f"{item_id}.pdf"
-            (folder / file).write_bytes(data)
-            try:
-                pages = pdf_page_count(folder / file)
-            except Exception as e:
-                (folder / file).unlink(missing_ok=True)
-                raise UnsupportedFile from e
-            item = Item(id=item_id, kind="pdf", file=file, name=name, pages=pages)
+            return Item(id=item_id, kind="image", file=file, name=name)
 
+        file = f"{item_id}.pdf"
+        (folder / file).write_bytes(data)
+        try:
+            pages = pdf_page_count(folder / file)
+        except Exception as e:
+            (folder / file).unlink(missing_ok=True)
+            raise UnsupportedFile from e
+        return Item(id=item_id, kind="pdf", file=file, name=name, pages=pages)
+
+    def _discard(self, uid: int, item: Item) -> None:
+        (self.dir(uid) / item.file).unlink(missing_ok=True)
+        (self.dir(uid) / f"{item.id}.thumb.jpg").unlink(missing_ok=True)
+
+    def commit(self, uid: int, item: Item) -> None:
+        """Вносит подготовленный файл в манифест. Синхронный и без await: в event loop он атомарен."""
+        session = self.load(uid)
+        if len(session.items) >= self.max_items:
+            self._discard(uid, item)
+            raise TooManyItems
+        if sum(i.pages for i in session.items) + item.pages > self.max_pages:
+            self._discard(uid, item)
+            raise TooManyPages
         session.items.append(item)
         self.save(uid, session)
+
+    def add(self, uid: int, data: bytes, kind: str, name: str = "") -> Item:
+        if len(self.load(uid).items) >= self.max_items:
+            raise TooManyItems
+        item = self.prepare(uid, data, kind, name)
+        self.commit(uid, item)
+        return item
+
+    async def add_async(self, uid: int, data: bytes, kind: str, name: str = "") -> Item:
+        """add() без блокировки event loop: разбор фото идёт в потоке, а в манифест пишет цикл событий."""
+        if len(self.load(uid).items) >= self.max_items:
+            raise TooManyItems
+        item = await asyncio.to_thread(self.prepare, uid, data, kind, name)
+        self.commit(uid, item)
         return item
 
     def remove(self, uid: int, item_id: str) -> None:
@@ -179,6 +212,26 @@ class SessionStore:
         path = self._ocr_path(uid)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"date": today, "pages": self.ocr_used(uid, today) + pages}), "utf-8")
+
+    def cleanup(self, max_age_days: float) -> int:
+        """Удаляет сессии, которых не трогали дольше max_age_days (фото конспектов не должны копиться вечно).
+        Запомненные ФИО и титульник (`_titles`) остаются. Возвращает число удалённых сессий."""
+        if max_age_days <= 0:
+            return 0
+        border = time.time() - max_age_days * 86400
+        removed = 0
+        for folder in self.root.iterdir():
+            if not (folder.is_dir() and folder.name.isdigit()):
+                continue
+            manifest = folder / "session.json"
+            touched = (manifest if manifest.exists() else folder).stat().st_mtime
+            if touched < border:
+                shutil.rmtree(folder, ignore_errors=True)
+                removed += 1
+        for path in (self.root / "_ocr").glob("*.json") if (self.root / "_ocr").exists() else []:
+            if path.stat().st_mtime < border:
+                path.unlink(missing_ok=True)
+        return removed
 
     def thumb_path(self, uid: int, item_id: str) -> Path:
         return self.dir(uid) / f"{item_id}.thumb.jpg"

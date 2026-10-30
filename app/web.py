@@ -16,7 +16,7 @@ from . import document, recognize
 from .config import ROOT, Config
 from .pdf import BuildOptions, safe_filename
 from .service import BuildError, build_and_send
-from .storage import SessionStore, TooManyItems, UnsupportedFile
+from .storage import SessionStore, TooManyItems, TooManyPages, UnsupportedFile
 from .title import WORK_TYPES, TitlePage
 
 WEBAPP_DIR = ROOT / "webapp"
@@ -34,9 +34,12 @@ def validate_init_data(init_data: str, bot_token: str) -> dict | None:
     expected = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, received):
         return None
-    if time.time() - int(params.get("auth_date", 0)) > INIT_DATA_TTL:
+    try:
+        if time.time() - int(params.get("auth_date", 0)) > INIT_DATA_TTL:
+            return None
+        return json.loads(params.get("user", "{}"))
+    except ValueError:  # подпись верна, но поля кривые: считаем запрос чужим, а не падаем с 500
         return None
-    return json.loads(params.get("user", "{}"))
 
 
 def thumb_sig(secret: str, uid: int, item_id: str) -> str:
@@ -97,9 +100,12 @@ async def upload(request: web.Request):
         name = part.filename or ""
         kind = "pdf" if name.lower().endswith(".pdf") or part.headers.get("Content-Type") == "application/pdf" else "image"
         try:
-            store.add(request["uid"], bytes(data), kind, name)
+            await store.add_async(request["uid"], bytes(data), kind, name)
         except TooManyItems:
             errors.append(f"Максимум {store.max_items} файлов")
+            break
+        except TooManyPages:
+            errors.append(f"Максимум {store.max_pages} страниц в одном PDF")
             break
         except UnsupportedFile:
             errors.append(f"Не удалось открыть {name or 'файл'}")
@@ -208,7 +214,11 @@ async def export(request: web.Request):
     name = f"{stem}.{fmt}"
     caption = "Документ Word с распознанным текстом. Проверь его: распознавание бывает неточным." if fmt == "docx" \
         else "PDF, набранный из распознанного текста."
-    await request.app["bot"].send_document(request["uid"], BufferedInputFile(data, filename=name), caption=caption)
+    try:
+        await request.app["bot"].send_document(request["uid"], BufferedInputFile(data, filename=name), caption=caption)
+    except Exception:
+        logging.exception("Не удалось отправить документ в чат")
+        return web.json_response({"error": "Не получилось отправить файл в чат. Открой бота и попробуй ещё раз"}, status=502)
     return web.json_response({**stats, "name": name, "size": len(data)})
 
 
