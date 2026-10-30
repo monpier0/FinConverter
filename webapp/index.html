@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
   <title>FinConverter</title>
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+  <link rel="preload" href="/static/fonts/golos-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/golos-latin.woff2" as="font" type="font/woff2" crossorigin>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
   <script>
-    // тема до первой отрисовки, иначе заставка на миг вспыхивает светлой в тёмной теме
+    // тема до первой отрисовки, иначе заставка на миг вспыхивает не тем цветом
     (function () {
       var tg = window.Telegram && Telegram.WebApp, q = new URLSearchParams(location.search).get("theme");
       var dark = q ? q === "dark" : tg && tg.initData ? tg.colorScheme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
@@ -20,263 +20,157 @@
   </script>
 </head>
 <body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+    <symbol id="logo" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#10131a"/><path d="M17 11h21l11 11v31a2 2 0 0 1-2 2H17a2 2 0 0 1-2-2V13a2 2 0 0 1 2-2z" fill="#dcff4f"/><path d="M38 11v9a2 2 0 0 0 2 2h9z" fill="#a5bf3b"/><rect x="22" y="22" width="6" height="25" rx="1.5" fill="#10131a"/><rect x="22" y="22" width="14" height="6" rx="1.5" fill="#10131a"/><rect x="22" y="32.5" width="10.5" height="5.5" rx="1.5" fill="#10131a"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-rot" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
+    <symbol id="i-del" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+    <symbol id="i-img" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-4.5 4 3 3-2.5 4 3.5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></symbol>
+    <symbol id="i-aa" viewBox="0 0 24 24"><path d="M3 18l5-12 5 12M5 14h6M15 18v-6m0 1.5c0-1.4 1.1-2.3 2.6-2.3S20 12.6 20 14v4"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  </svg>
+
   <!-- заставка «Тихий вход»: логотип проявляется, потом уступает место интерфейсу (exitSplash в app.js) -->
-  <div class="splash" id="splash" aria-hidden="true">
-    <svg class="splash-logo" viewBox="0 0 64 64" width="64" height="64">
-      <rect width="64" height="64" rx="16" fill="#10131a"/>
-      <path d="M17 11h21l11 11v31a2 2 0 0 1-2 2H17a2 2 0 0 1-2-2V13a2 2 0 0 1 2-2z" fill="#dcff4f"/>
-      <path d="M38 11v9a2 2 0 0 0 2 2h9z" fill="#a5bf3b"/>
-      <rect x="22" y="22" width="6" height="25" rx="1.5" fill="#10131a"/>
-      <rect x="22" y="22" width="14" height="6" rx="1.5" fill="#10131a"/>
-      <rect x="22" y="32.5" width="10.5" height="5.5" rx="1.5" fill="#10131a"/>
-    </svg>
-  </div>
+  <div class="splash" id="splash" aria-hidden="true"><svg class="splash-logo" width="64" height="64"><use href="#logo"/></svg></div>
 
-  <header class="top">
-    <div class="brand">
-      <img src="/static/logo.svg" alt="" width="28" height="28">
-      <span>FinConverter</span>
-    </div>
-    <button class="round" id="moreBtn" type="button" aria-label="Удалить все страницы" hidden>
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
-    </button>
-  </header>
+  <div id="app">
 
-  <main id="editor">
-    <section id="closed" class="empty" hidden>
-      <h1 class="display">Мини-апп<br>пока закрыт</h1>
-      <p class="lead">Сейчас он доступен только администраторам бота.</p>
-    </section>
-
-    <section id="empty" class="empty" hidden>
-      <h1 class="display">Соберём PDF<br>из фото конспектов</h1>
-      <p class="lead">Фото, сканы и PDF в одном файле — с титульным листом и в нужном порядке.</p>
-      <ol class="steps">
-        <li><span>01</span>Добавь фото — можно сразу альбомом</li>
-        <li><span>02</span>Расставь страницы и включи «Скан»</li>
-        <li><span>03</span>Получи готовый PDF в чате</li>
-      </ol>
-      <div class="dock dock-col">
-        <label class="pill primary wide">
-          <input type="file" accept="image/*,application/pdf,.heic" multiple class="file-input">
-          Выбрать фото или PDF
-        </label>
-        <span class="muted">или просто отправь их боту в чат</span>
-      </div>
-    </section>
-
-    <div id="content" hidden>
-      <h1 class="title">Новый PDF</h1>
-      <p class="muted" id="subtitle"></p>
-
-      <div class="chips">
-        <label class="chip"><span></span><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg>
-          <select data-opt="mode" aria-label="Режим">
-            <option value="color">Цвет</option>
-            <option value="gray">Ч/Б</option>
-            <option value="scan">Скан</option>
-          </select>
-        </label>
-        <label class="chip"><span></span><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg>
-          <select data-opt="page" aria-label="Формат страниц">
-            <option value="original">Как фото</option>
-            <option value="a4">A4 с полями</option>
-          </select>
-        </label>
-        <label class="chip"><span></span><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg>
-          <select data-opt="quality" aria-label="Качество">
-            <option value="high">Высокое качество</option>
-            <option value="medium">Обычное качество</option>
-            <option value="low">Сжатое</option>
-          </select>
-        </label>
-        <button class="chip" id="nameChip" type="button"><span></span></button>
-      </div>
-      <p class="hint" id="optHint"></p>
-
-      <div class="title-card" id="titleCard">
-        <button class="title-card-open" id="titleOpen" type="button">
-          <span class="mini" id="titleMini"></span>
-          <span class="title-card-text">
-            <b>Титульный лист</b>
-            <span id="titleLine1"></span>
-            <span id="titleLine2"></span>
-          </span>
-        </button>
-        <input type="checkbox" class="switch" data-title="enabled" aria-label="Добавить титульный лист">
-      </div>
-
-      <div class="ocr-card" id="ocrCard" hidden>
-        <button class="ocr-open" id="ocrOpen" type="button">
-          <span class="ocr-mini" aria-hidden="true">Aa</span>
-          <span class="ocr-text">
-            <b id="ocrTitle">Распознать текст</b>
-            <span id="ocrSub"></span>
-          </span>
-        </button>
-        <button class="pill small primary" id="ocrBtn" type="button">Распознать</button>
-      </div>
-
-      <div class="grid" id="grid"></div>
-      <div class="spacer"></div>
-
+    <!-- старт: рамка как в видоискателе -->
+    <section class="screen on" id="sStart" aria-label="Добавление страниц">
+      <header class="bar"><span class="brand"><img src="/static/logo.svg" alt="" width="26" height="26"><span>FinConverter</span></span></header>
+      <div class="finder" id="finder"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i><b>Положите лист в кадр</b><span>Фото, скан или PDF</span></div>
+      <p class="hintline">Можно отправить сразу несколько файлов</p>
       <div class="dock">
-        <label class="round big" aria-label="Добавить фото или PDF">
-          <input type="file" accept="image/*,application/pdf,.heic" multiple class="file-input">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-        </label>
-        <button class="pill primary grow" id="buildBtn" type="button"></button>
+        <label class="side press" aria-label="Из галереи"><input type="file" accept="image/*,.heic,.heif" multiple class="file-input"><svg class="i"><use href="#i-img"/></svg></label>
+        <label class="shutter press" aria-label="Снять"><input type="file" accept="image/*" capture="environment" class="file-input"><svg class="ring"><circle class="tr" cx="38" cy="38" r="35"/></svg><span class="core">Снять</span></label>
+        <label class="side press" aria-label="PDF-файл"><input type="file" accept="application/pdf,.pdf" multiple class="file-input"><svg class="i"><use href="#i-file"/></svg></label>
       </div>
-    </div>
-  </main>
+      <p class="cap">Поддерживаются JPG, PNG, HEIC и PDF</p>
+    </section>
 
-  <section id="done" class="done" hidden>
-    <div class="done-mark" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
-    </div>
-    <h1 class="display" id="doneTitle">Готово.<br>PDF уже в чате</h1>
-    <p class="lead" id="doneLead">Новые фото пойдут в следующий файл.</p>
-    <div class="file-card">
-      <span class="file-icon" id="doneIcon" aria-hidden="true">PDF</span>
-      <div>
-        <b id="doneName"></b>
-        <span class="muted" id="doneMeta"></span>
+    <!-- редактор: страница крупно, плёнка, режим под ней -->
+    <section class="screen" id="sEdit" aria-label="Редактор">
+      <header class="bar">
+        <button type="button" class="round press" id="clear" aria-label="Убрать все страницы"><svg class="i"><use href="#i-x"/></svg></button>
+        <span class="count" id="count" aria-live="polite"></span>
+        <button type="button" class="round press" id="more" aria-label="Настройки"><svg class="i"><use href="#i-dots"/></svg></button>
+      </header>
+      <div class="deck m-scan" id="deck" tabindex="0" aria-roledescription="карусель" aria-label="Страницы документа">
+        <div class="tools" id="tools">
+          <button type="button" id="rot" class="press" aria-label="Повернуть"><svg class="i"><use href="#i-rot"/></svg></button>
+          <button type="button" id="del" class="press" aria-label="Удалить страницу"><svg class="i"><use href="#i-del"/></svg></button>
+        </div>
       </div>
-    </div>
-    <div class="dock">
-      <button class="pill grow" id="again" type="button">Ещё один</button>
-      <button class="pill primary grow" id="backToChat" type="button">В чат</button>
-    </div>
-  </section>
+      <div class="seg3" id="mode" role="group" aria-label="Режим"><span class="knob" id="knob"></span><button type="button" data-m="color">Цвет</button><button type="button" data-m="gray">Ч/Б</button><button type="button" data-m="scan">Скан</button></div>
+      <div class="film" id="film" role="list" aria-label="Страницы"></div>
+      <p class="meta" id="meta"></p>
+      <div class="dock">
+        <label class="side press" id="add" aria-label="Добавить страницы"><input type="file" accept="image/*,application/pdf,.pdf,.heic,.heif" multiple class="file-input"><svg class="i"><use href="#i-plus"/></svg></label>
+        <button type="button" class="shutter press" id="build" aria-label="Собрать PDF"><svg class="ring"><circle class="tr" cx="38" cy="38" r="35"/><circle class="pr" cx="38" cy="38" r="35"/></svg><span class="core">PDF</span></button>
+        <button type="button" class="side press" id="ocr" aria-label="Распознать текст"><svg class="i"><use href="#i-aa"/></svg><svg class="ringo" aria-hidden="true"><circle cx="29" cy="29" r="25.5"/></svg><span class="dot" id="odot" hidden></span></button>
+      </div>
+      <p class="cap" id="cap"></p>
+    </section>
 
-  <!-- титульный лист -->
-  <div class="sheet-wrap" id="titleSheet" hidden>
-    <div class="scrim" data-close></div>
-    <section class="sheet" aria-label="Титульный лист">
-      <div class="handle" aria-hidden="true"></div>
-      <div class="sheet-head">
-        <h2>Титульный лист</h2>
-        <button class="pill small" type="button" data-close>Готово</button>
+    <!-- проверка распознанного текста -->
+    <section class="screen" id="sReview" aria-label="Проверка текста">
+      <div class="rv-pg" id="rvPg"><div class="zoom" id="rvZoom"><img id="rvImg" alt="" draggable="false"><div class="boxes" id="rvBoxes"></div></div></div>
+      <header class="rv-top"><button type="button" class="round press" id="rvClose" aria-label="Закрыть"><svg class="i"><use href="#i-x"/></svg></button><span class="pill" id="rvCount"></span><span class="round ghost-round" aria-hidden="true"></span></header>
+      <div class="rv-sheet" id="rvSheet">
+        <div class="hd"></div>
+        <div class="rv-text" id="rvText" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Распознанный текст" spellcheck="false"></div>
+        <p class="legend" id="rvLegend" hidden></p>
+        <div class="rv-foot">
+          <div class="pg-nav"><button type="button" id="rvPrev" aria-label="Предыдущая страница"><svg class="i"><use href="#i-left"/></svg></button><span class="dots" id="rvDots" aria-hidden="true"></span><button type="button" id="rvNext" aria-label="Следующая страница"><svg class="i"><use href="#i-right"/></svg></button></div>
+          <div class="acts"><button type="button" class="main press" data-fmt="docx">Word</button><button type="button" class="press" data-fmt="pdf">PDF</button><button type="button" class="press" data-fmt="text">Копия</button></div>
+        </div>
       </div>
-      <p class="muted small">Шаблон Финансового университета, A4, Times New Roman 14</p>
-      <div class="chips" id="workTypes"></div>
-      <div class="fields">
-        <label class="field"><span>Дисциплина</span><input type="text" data-title="discipline" placeholder="Микроэкономика"></label>
+    </section>
+
+    <!-- готово -->
+    <section class="screen" id="sDone" aria-label="Готово">
+      <div class="center">
+        <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+        <h1 id="doneTitle">Готово.<br>PDF уже в чате</h1>
+        <p id="doneLead">Новые фото пойдут в следующий файл.</p>
+        <div class="fc"><span class="ic" id="doneIcon">PDF</span><div><b id="doneName"></b><span id="doneMeta"></span></div></div>
+      </div>
+      <div class="dock wide"><button type="button" class="btn-soft press" id="again">Ещё один</button><button type="button" class="btn-main press" id="backToChat">В чат</button></div>
+    </section>
+
+    <!-- закрытый режим -->
+    <section class="screen" id="sClosed" aria-label="Доступ закрыт">
+      <header class="bar"><span class="brand"><img src="/static/logo.svg" alt="" width="26" height="26"><span>FinConverter</span></span></header>
+      <div class="center"><h1>Мини-апп<br>пока закрыт</h1><p>Сейчас он доступен только администраторам бота.</p></div>
+    </section>
+
+    <div class="scrim" id="scrim"></div>
+
+    <!-- настройки -->
+    <div class="sheet" id="shSettings" role="dialog" aria-modal="true" aria-label="Настройки" hidden>
+      <div class="handle"></div><h2>Настройки</h2>
+      <div class="row"><span class="lb">Формат страниц</span><span class="mini-seg" data-opt="page"><button type="button" data-v="original">Как фото</button><button type="button" data-v="a4">A4</button></span></div>
+      <div class="row"><span class="lb">Качество</span><span class="mini-seg" data-opt="quality"><button type="button" data-v="low">Сжатое</button><button type="button" data-v="medium">Обычное</button><button type="button" data-v="high">Высокое</button></span></div>
+      <div class="row"><label class="lb" for="fname">Имя файла</label><input class="inp" id="fname" data-opt="filename" maxlength="80" placeholder="Конспект" autocomplete="off"></div>
+      <div class="row"><span class="lb">Титульный лист<small id="tsub"></small></span><span class="row-end"><button type="button" class="pill press" id="tEdit">Изменить</button><input type="checkbox" class="sw" data-title="enabled" aria-label="Добавить титульный лист"></span></div>
+      <button type="button" class="btn-main press" data-close>Готово</button>
+    </div>
+
+    <!-- титульный лист -->
+    <div class="sheet tall" id="shTitle" role="dialog" aria-modal="true" aria-label="Титульный лист" hidden>
+      <div class="handle"></div><h2>Титульный лист</h2>
+      <div class="sheet-body">
+        <div class="tprev" id="tprev"></div>
+        <p class="sub">Шаблон Финансового университета, A4, Times New Roman 14</p>
+        <div class="types" id="workTypes" role="group" aria-label="Тип работы"></div>
+        <label class="field"><span>Дисциплина</span><input type="text" data-title="discipline" placeholder="Микроэкономика" autocomplete="off"></label>
         <label class="field"><span>Тема</span><textarea data-title="topic" rows="2" placeholder="Необязательно"></textarea></label>
         <label class="field"><span>ФИО студента</span><input type="text" data-title="student" placeholder="Иванова Мария Сергеевна" autocomplete="name"></label>
-        <div class="field-row">
-          <label class="field"><span>Группа</span><input type="text" data-title="group" placeholder="ЭБ24-3"></label>
-          <div class="seg" role="group" aria-label="Подпись" id="labelSeg">
-            <button type="button" data-v="Выполнил">Выполнил</button>
-            <button type="button" data-v="Выполнила">Выполнила</button>
-          </div>
-        </div>
-        <label class="field"><span>Преподаватель</span><input type="text" data-title="teacher" placeholder="Петров П. П."></label>
-        <label class="field"><span>Должность преподавателя</span><input type="text" data-title="teacher_position" placeholder="к.э.н., доцент"></label>
-        <label class="field"><span>Факультет</span><input type="text" data-title="faculty" placeholder="Необязательно"></label>
-        <label class="field"><span>Город</span><input type="text" data-title="city" placeholder="Москва"></label>
+        <div class="two"><label class="field"><span>Группа</span><input type="text" data-title="group" placeholder="ЭБ24-3" autocomplete="off"></label><div class="mini-seg full" id="labelSeg" role="group" aria-label="Подпись"><button type="button" data-v="Выполнил">Выполнил</button><button type="button" data-v="Выполнила">Выполнила</button></div></div>
+        <label class="field"><span>Преподаватель</span><input type="text" data-title="teacher" placeholder="Петров П. П." autocomplete="off"></label>
+        <label class="field"><span>Должность преподавателя</span><input type="text" data-title="teacher_position" placeholder="к.э.н., доцент" autocomplete="off"></label>
+        <label class="field"><span>Факультет</span><input type="text" data-title="faculty" placeholder="Необязательно" autocomplete="off"></label>
+        <label class="field"><span>Город</span><input type="text" data-title="city" placeholder="Москва" autocomplete="off"></label>
+        <p class="sub">ФИО, группа и дисциплина запоминаются. Тема сбрасывается после отправки.</p>
       </div>
-      <p class="muted small">ФИО, группа и дисциплина запоминаются. Тема сбрасывается после отправки.</p>
-    </section>
+      <button type="button" class="btn-main press" data-close>Готово</button>
+    </div>
+
+    <!-- распознавание: прогресс -->
+    <div class="sheet" id="shOcr" role="dialog" aria-modal="true" aria-label="Распознавание текста" hidden>
+      <div class="handle"></div><h2>Распознаю текст</h2>
+      <p class="sub" id="oLabel" aria-live="polite"></p>
+      <div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><i id="oBar"></i></div>
+      <div class="ocr-steps" id="oSteps"></div>
+      <button type="button" class="ghost press" id="oCancel">Отменить</button>
+    </div>
+
+    <!-- диагностика (7 нажатий по логотипу) -->
+    <div class="sheet" id="shDiag" role="dialog" aria-modal="true" aria-label="Диагностика" hidden>
+      <div class="handle"></div><h2>Диагностика</h2>
+      <pre class="diag" id="diagText"></pre>
+      <button type="button" class="btn-soft press" id="diagCopy">Скопировать</button>
+      <button type="button" class="btn-main press" data-close>Закрыть</button>
+    </div>
+
+    <div class="dialog" id="dClear" role="alertdialog" aria-modal="true" aria-label="Убрать все страницы" hidden>
+      <h2>Убрать все страницы?</h2><p>Все добавленные фото и PDF будут удалены.</p>
+      <div class="two"><button type="button" class="btn-soft press" data-close>Отмена</button><button type="button" class="btn-danger press" id="clearYes">Убрать</button></div>
+    </div>
+    <div class="dialog" id="dMsg" role="alertdialog" aria-modal="true" aria-labelledby="dMsgTitle" hidden>
+      <h2 id="dMsgTitle"></h2><p id="dMsgText"></p>
+      <button type="button" class="btn-main press" data-close>Понятно</button>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toastText"></span><button type="button" id="toastAct" hidden></button></div>
   </div>
 
-  <!-- имя файла -->
-  <div class="sheet-wrap" id="nameSheet" hidden>
-    <div class="scrim" data-close></div>
-    <section class="sheet sheet-short" aria-label="Имя файла">
-      <div class="handle" aria-hidden="true"></div>
-      <div class="sheet-head">
-        <h2>Имя файла</h2>
-        <button class="pill small" type="button" data-close>Готово</button>
-      </div>
-      <label class="field"><span>Название PDF</span><input type="text" data-opt="filename" maxlength="80" placeholder="По умолчанию — дата и время"></label>
-    </section>
-  </div>
-
-  <!-- распознавание: прогресс -->
-  <div class="sheet-wrap" id="ocrSheet" hidden>
-    <div class="scrim"></div>
-    <section class="sheet" aria-label="Распознавание текста">
-      <div class="handle" aria-hidden="true"></div>
-      <h2 class="sheet-title">Распознаю текст</h2>
-      <p class="muted" id="ocrLabel" aria-live="polite"></p>
-      <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><i id="ocrBar"></i></div>
-      <div class="ocr-steps" id="ocrSteps"></div>
-      <button class="ghost" id="ocrCancel" type="button">Отменить</button>
-    </section>
-  </div>
-
-  <!-- распознавание: проверка и правка текста по страницам -->
-  <div class="review" id="review" hidden>
-    <div class="review-top">
-      <button class="round" id="rvClose" type="button" aria-label="Закрыть">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-      </button>
-      <span class="review-count" id="rvCount"></span>
-      <span class="round-space"></span>
-    </div>
-    <div class="review-body">
-      <button class="review-photo" id="rvPhoto" type="button" aria-label="Открыть фото"><img id="rvImg" alt=""><span>Открыть фото</span></button>
-      <div class="review-text" id="rvText" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Распознанный текст" spellcheck="false"></div>
-      <p class="legend" id="rvLegend"></p>
-    </div>
-    <div class="dock">
-      <button class="round big" id="rvPrev" type="button" aria-label="Предыдущая страница">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
-      </button>
-      <button class="pill primary grow" id="rvNext" type="button"></button>
-    </div>
-  </div>
-
-  <!-- распознавание: что сделать с текстом -->
-  <section class="result" id="result" hidden>
-    <h1 class="title">Текст готов</h1>
-    <p class="muted" id="resStat"></p>
-    <div class="opts">
-      <button class="opt main" data-fmt="docx" type="button" style="--i: 0">
-        <span class="ic">DOC</span>
-        <span class="t"><b>Документ Word</b><span>Times New Roman 14, поля по ГОСТ. Придёт в чат файлом .docx</span></span>
-      </button>
-      <button class="opt" data-fmt="pdf" type="button" style="--i: 1">
-        <span class="ic">PDF</span>
-        <span class="t"><b>PDF с текстом</b><span>Страницы набраны текстом, его можно выделять и копировать</span></span>
-      </button>
-      <button class="opt" data-fmt="text" type="button" style="--i: 2">
-        <span class="ic">Aa</span>
-        <span class="t"><b>Копировать текст</b><span>Весь текст в буфер обмена</span></span>
-      </button>
-    </div>
-    <div class="dock"><button class="pill grow" id="resBack" type="button">Назад к страницам</button></div>
-  </section>
-
-  <div class="viewer" id="viewer" hidden>
-    <div class="viewer-top">
-      <button class="round glass" id="vClose" type="button" aria-label="Закрыть">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-      </button>
-      <span class="counter" id="vTitle"></span>
-      <span class="round-space"></span>
-    </div>
-    <div class="viewer-stage" id="vStage"></div>
-    <div class="toolbar">
-      <button class="tool" id="vPrev" type="button" aria-label="Предыдущая">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
-      </button>
-      <button class="tool tool-main" id="vRotate" type="button">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
-        Повернуть
-      </button>
-      <button class="tool tool-danger" id="vDelete" type="button" aria-label="Удалить">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
-      </button>
-      <button class="tool" id="vNext" type="button" aria-label="Следующая">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-    </div>
-  </div>
-
-  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-
+  <script src="/static/vendor/Sortable.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
